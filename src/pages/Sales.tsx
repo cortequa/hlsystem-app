@@ -132,7 +132,7 @@ export default function Sales() {
                 };
             });
 
-            setFilteredOrders(processedFiltered);
+            setFilteredOrders(processedFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         } catch (err) {
             console.error("Failed to filter orders:", err);
             setFilteredOrders([]);
@@ -173,7 +173,7 @@ export default function Sales() {
         const results = orders.filter(order =>
             order._id.toLowerCase().includes(searchId.toLowerCase())
         );
-        setFilteredOrders(results);
+        setFilteredOrders(results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
     }, [searchId, orders, dateFilter, startDate, endDate, filterOrders]);
 
     // Add effect for search

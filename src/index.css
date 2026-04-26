@@ -8,8 +8,9 @@
 
 :root {
   font-family: 'Outfit';
-  line-height: 1.5;
-  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 500;
 
   color-scheme: light;
   color: #0D1218;
@@ -27,4 +28,24 @@
   --color-link: #2563EB;
   --color-error: #DC2626;
   --color-success: #16A34A;
+}
+
+@layer base {
+  body {
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+  }
+
+  p, span, li, td, th, label, input, select, textarea, button {
+    font-weight: 500;
+  }
+
+  small {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
 }

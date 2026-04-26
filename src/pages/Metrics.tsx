@@ -7,10 +7,13 @@ import { ProductMetric, MetricItem, DateFilter } from '../types/metrics';
 
 export default function Metrics() {
   // Granularity control
-  const [dateFilter, setDateFilter] = useState<DateFilter>('day');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('month');
   
   // Always visible date range controls
-  const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState<string>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  });
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
   const [loading, setLoading] = useState(true);
