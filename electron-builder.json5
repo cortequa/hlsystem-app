@@ -9,7 +9,7 @@
   },
   "publish": {
     "provider": "github",
-    "owner": "caliaq",
+    "owner": "cortequa",
     "repo": "hlsystem-app"
   },
   "forceCodeSigning": false,
@@ -33,8 +33,6 @@
       }
     ],
     "artifactName": "hlsystem-app-setup-${version}.${ext}",
-    "certificateFile": "certs/hlsystem-codesign.pfx",
-    "certificatePassword": "hlsystem2024",
     "verifyUpdateCodeSignature": false,
     "publisherName": "HLSystem"
   },

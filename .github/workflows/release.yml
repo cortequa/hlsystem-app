@@ -26,4 +26,6 @@ jobs:
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          WIN_CSC_LINK: ""
         run: npm run build:publish
