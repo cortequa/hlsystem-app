@@ -1,4 +1,4 @@
-const API = import.meta.env.VITE_API;
+const API = 'http://109.164.15.139:3000/api';
 
 export const ENV = {
   API: {
