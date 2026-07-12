@@ -4,6 +4,8 @@ import Home from "./pages/Home";
 import Sales from "./pages/Sales";
 import Metrics from "./pages/Metrics";
 import TaxReduction from "./pages/TaxReduction";
+import Reservations from "./pages/Reservations";
+import LicensePlates from "./pages/LicensePlates";
 
 import Navigation from "./components/Navigation";
 import UpdateManager from "./components/UpdateManager";
@@ -15,6 +17,8 @@ function App() {
       <div className="flex-1 overflow-hidden">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/reservations" element={<Reservations />} />
+          <Route path="/plates" element={<LicensePlates />} />
           <Route path="/sales" element={<Sales />} />
           <Route path="/metrics" element={<Metrics />} />
           <Route path="/tax-reduction" element={<TaxReduction />} />

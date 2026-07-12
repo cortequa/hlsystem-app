@@ -10,7 +10,12 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-electron
 *.local
+
+# Build/installer artefakty (Sprint 4 úklid repa)
+temp-installer.exe
+*.exe
 
 .env
 .env.*

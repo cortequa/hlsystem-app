@@ -27,6 +27,24 @@ export default function Navigation() {
             ),
         },
         {
+            path: "/reservations",
+            icon: (
+                // Kalendář — rezervace/pobyty
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                </svg>
+            ),
+        },
+        {
+            path: "/plates",
+            icon: (
+                // Štítek/SPZ — správa registračních značek
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M17.707 9.293l-5-5A1 1 0 0012 4H4a1 1 0 00-1 1v8a1 1 0 00.293.707l5 5a1 1 0 001.414 0l7-7a1 1 0 000-1.414zM6 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+            ),
+        },
+        {
             path: "/sales",
             icon: (
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
@@ -68,10 +86,11 @@ export default function Navigation() {
             {/* Navigační odkazy */}
             <div className="flex flex-col items-center mt-8 space-y-4">
                 {navItems.map((item, index) => (
-                    <NavLink 
+                    <NavLink
                         key={index}
-                        to={item.path} 
-                        className={({ isActive }) => 
+                        to={item.path}
+                        end={item.path === "/"}
+                        className={({ isActive }) =>
                             `w-10 h-10 rounded-full flex items-center justify-center transition-colors duration-200 ${
                                 isActive ? "bg-text-primary" : "bg-text-secondary hover:bg-text-primary"
                             }`
