@@ -34,13 +34,27 @@ class PrinterService {
 
   private printReceiptWeb(data: PrintReceiptData) {
     const receiptHtml = this.generateReceiptHtml(data);
-    const printWindow = window.open('', '_blank', 'width=300,height=600');
-  
-    if (printWindow) {
-      printWindow.document.write(receiptHtml);
-      printWindow.document.close();
-      printWindow.print();
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(receiptHtml);
+      doc.close();
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
     }
+
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 1000);
   }
 
   private generateReceiptHtml(data: PrintReceiptData): string {

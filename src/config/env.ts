@@ -1,4 +1,4 @@
-const API = import.meta.env.VITE_API;
+const API = 'http://109.164.15.139:3000/api';
 
 // WebSocket (Socket.IO) běží na stejném originu jako API. VITE_WS umožní override
 // (např. když API sedí za jiným portem/hostem než realtime brána).
