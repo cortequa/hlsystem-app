@@ -1,11 +1,8 @@
 // API endpoint je KONFIGUROVATELNÝ přes build-time env (VITE_API), ne natvrdo
-// (prod-check C1). Fallback drží dosavadní adresu, ať se nasazení nerozbije.
-// ⚠️ PRODUKCE: musí to být HTTPS přes nginx (443), ne plain HTTP na přímý port —
-// jinak jdou příkazy brány a osobní údaje po síti nešifrovaně.
-// API endpoint je KONFIGUROVATELNÝ přes build-time env (VITE_API), ne natvrdo.
-// PRODUKCE: nastav `VITE_API=https://<doména>/api` (přes nginx/443). Fallback drží
-// dosavadní adresu, ať se build nerozbije, ale plain-HTTP hlásí varováním.
-const API = import.meta.env.VITE_API ?? 'http://109.164.15.139:3000/api';
+// (prod-check C1). VŽDY HTTPS přes nginx (443) — příkazy brány i osobní údaje
+// nesmí po síti nešifrovaně. Fallback míří na veřejnou IP přes HTTPS (ne plain
+// HTTP na přímý port), ať i build bez nastaveného VITE_API zůstane bezpečný.
+const API = import.meta.env.VITE_API ?? 'https://109.164.15.139/api';
 
 if (API.startsWith('http://') && !API.includes('localhost') && !API.includes('127.0.0.1')) {
   console.warn('[BEZPEČNOST] API běží přes nešifrované HTTP:', API, '— v produkci použij HTTPS.');
