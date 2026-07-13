@@ -11,8 +11,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest]
         
     steps:
       - name: Checkout code
@@ -21,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
           
       - name: Install dependencies
@@ -59,7 +60,6 @@ jobs:
           files: |
             ./artifacts/build-windows-latest/**/*
             ./artifacts/build-macos-latest/**/*
-            ./artifacts/build-ubuntu-latest/**/*
           draft: false
           prerelease: false
           generate_release_notes: true

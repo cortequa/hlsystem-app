@@ -239,6 +239,16 @@ function applyCsp() {
 }
 
 app.whenReady().then(() => {
+  // Ignorovat self-signed / neplatné TLS certifikáty pro všechny požadavky
+  // (API server používá self-signed certifikát)
+  app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+    event.preventDefault()
+    callback(true)
+  })
+  session.defaultSession.setCertificateVerifyProc((request, callback) => {
+    callback(0) // 0 = OK, přijmout certifikát
+  })
+
   applyCsp()
   createWindow()
 
