@@ -2,7 +2,6 @@ import { FormEvent, useMemo, useState } from "react";
 import { orderService } from "../services/orderService";
 import { visitorService } from "../services/visitorService";
 import { licensePlateService } from "../services/licensePlateService";
-import { Product } from "../types/product";
 import { Visitor } from "../types/visitor";
 import { LicensePlate } from "../types/licensePlate";
 import { Order } from "../types/order";
@@ -14,48 +13,25 @@ export interface ReservationAggregate {
 
 interface Props {
   visitors: Visitor[];
-  products: Product[];
   reservation: ReservationAggregate | null; // null = nová
   onClose: () => void;
   onSaved: () => void;
 }
 
-interface ItemRow {
-  productId: string;
-  quantity: number;
-  duration?: number;
-}
-
 const todayISODate = () => new Date().toISOString().split("T")[0];
 
-export default function ReservationModal({ visitors, products, reservation, onClose, onSaved }: Props) {
+export default function ReservationModal({ visitors, reservation, onClose, onSaved }: Props) {
   const editing = reservation !== null;
 
-  const [visitorMode, setVisitorMode] = useState<"existing" | "new">(
-    editing ? "existing" : visitors.length > 0 ? "existing" : "new",
-  );
-  const [visitorId, setVisitorId] = useState<string>(
-    typeof reservation?.order.visitor === "object"
-      ? (reservation?.order.visitor as Visitor)._id
-      : (reservation?.order.visitor as string) ?? "",
-  );
-  const [newVisitor, setNewVisitor] = useState({ name: "", email: "", phone: "" });
+  const initialName = (() => {
+    const v = reservation?.order.visitor;
+    if (!v) return "";
+    if (typeof v === "object") return v.name;
+    return visitors.find((x) => x._id === v)?.name ?? "";
+  })();
 
-  const [date, setDate] = useState<string>(
-    reservation?.order.createdAt ? reservation.order.createdAt.split("T")[0] : todayISODate(),
-  );
-
-  const [items, setItems] = useState<ItemRow[]>(() => {
-    if (reservation?.order.items?.length) {
-      return reservation.order.items.map((it) => ({
-        productId: typeof it.product === "string" ? it.product : it.product._id,
-        quantity: it.quantity,
-        duration: it.duration,
-      }));
-    }
-    return [{ productId: products[0]?._id ?? "", quantity: 1 }];
-  });
-
+  const [name, setName] = useState(initialName);
+  const [note, setNote] = useState<string>(reservation?.order.note ?? "");
   const [plateText, setPlateText] = useState("");
   const [plates, setPlates] = useState<string[]>(reservation?.plates.map((p) => p.text) ?? []);
 
@@ -65,12 +41,6 @@ export default function ReservationModal({ visitors, products, reservation, onCl
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const addItem = () =>
-    setItems((prev) => [...prev, { productId: products[0]?._id ?? "", quantity: 1 }]);
-  const removeItem = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
-  const patchItem = (i: number, patch: Partial<ItemRow>) =>
-    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
 
   const addPlate = () => {
     const t = plateText.trim().toUpperCase();
@@ -82,44 +52,40 @@ export default function ReservationModal({ visitors, products, reservation, onCl
     e.preventDefault();
     setError(null);
 
-    const validItems = items.filter((it) => it.productId && it.quantity > 0);
-    if (validItems.length === 0) {
-      setError("Přidej alespoň jednu položku.");
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Zadej jméno hosta.");
       return;
     }
 
     setSubmitting(true);
     try {
-      // 1) Návštěvník: existující nebo rychlé založení.
-      let resolvedVisitorId = visitorId;
-      if (visitorMode === "new") {
-        if (!newVisitor.name || !newVisitor.email) {
-          throw new Error("Nový návštěvník potřebuje jméno a e-mail.");
-        }
-        const created = await visitorService.createVisitor(newVisitor);
+      // 1) Návštěvník – najdi podle jména nebo vytvoř nového
+      let resolvedVisitorId: string | undefined;
+      const existing = visitors.find((v) => v.name.toLowerCase() === trimmedName.toLowerCase());
+      if (existing) {
+        resolvedVisitorId = existing._id;
+      } else {
+        const created = await visitorService.createVisitor({ name: trimmedName, email: "" });
         resolvedVisitorId = created.visitorId;
       }
 
       const orderPayload = {
-        visitorId: resolvedVisitorId || undefined,
-        products: validItems.map((it) => ({
-          productId: it.productId,
-          quantity: it.quantity,
-          duration: it.duration,
-        })),
-        date: new Date(date).toISOString(),
+        visitorId: resolvedVisitorId,
+        note: note.trim() || undefined,
+        date: todayISODate(),
       };
 
-      // 2) Objednávka (rezervace) — create nebo update.
+      // 2) Rezervace – vytvoř nebo uprav
       let orderId: string;
       if (editing && reservation) {
-        await orderService.updateOrder(reservation.order._id, orderPayload);
+        await orderService.updateReservation(reservation.order._id, orderPayload);
         orderId = reservation.order._id;
       } else {
-        orderId = await orderService.createOrder(orderPayload);
+        orderId = await orderService.createReservation(orderPayload);
       }
 
-      // 3) SPZ pro pobyt: bez update endpointu smažeme staré a založíme aktuální.
+      // 3) SPZ – smaž staré, vlož nové
       if (editing && reservation) {
         await Promise.all(reservation.plates.map((p) => licensePlateService.remove(p._id)));
       }
@@ -144,7 +110,7 @@ export default function ReservationModal({ visitors, products, reservation, onCl
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        className="bg-primary rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        className="bg-primary rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
       >
         <div className="flex items-center justify-between p-4 border-b border-secondary">
           <h2 className="text-lg font-semibold text-text-primary">
@@ -156,114 +122,50 @@ export default function ReservationModal({ visitors, products, reservation, onCl
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Návštěvník */}
+          {/* Jméno */}
           <section>
-            <h3 className="text-sm font-semibold text-text-primary mb-2">Návštěvník</h3>
-            <div className="flex gap-2 mb-2 text-sm">
-              <button
-                type="button"
-                onClick={() => setVisitorMode("existing")}
-                className={`px-3 py-1 rounded-lg ${visitorMode === "existing" ? "bg-link text-white" : "bg-secondary text-text-primary"}`}
-              >
-                Existující
-              </button>
-              <button
-                type="button"
-                onClick={() => setVisitorMode("new")}
-                className={`px-3 py-1 rounded-lg ${visitorMode === "new" ? "bg-link text-white" : "bg-secondary text-text-primary"}`}
-              >
-                Nový
-              </button>
-            </div>
-            {visitorMode === "existing" ? (
-              <select
-                value={visitorId}
-                onChange={(e) => setVisitorId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-secondary bg-primary text-text-primary"
-              >
-                <option value="">— vyber návštěvníka —</option>
-                {visitors.map((v) => (
-                  <option key={v._id} value={v._id}>
-                    {v.name} ({v.email})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="grid grid-cols-3 gap-2">
-                <input placeholder="Jméno" value={newVisitor.name} onChange={(e) => setNewVisitor({ ...newVisitor, name: e.target.value })} className="px-3 py-2 rounded-lg border border-secondary bg-primary text-text-primary" />
-                <input placeholder="E-mail" value={newVisitor.email} onChange={(e) => setNewVisitor({ ...newVisitor, email: e.target.value })} className="px-3 py-2 rounded-lg border border-secondary bg-primary text-text-primary" />
-                <input placeholder="Telefon" value={newVisitor.phone} onChange={(e) => setNewVisitor({ ...newVisitor, phone: e.target.value })} className="px-3 py-2 rounded-lg border border-secondary bg-primary text-text-primary" />
-              </div>
-            )}
+            <label className="text-xs text-text-secondary block mb-1">Jméno hosta</label>
+            <input
+              list="visitor-names"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Jméno hosta…"
+              className="w-full px-3 py-2 rounded-lg border border-secondary bg-primary text-text-primary"
+            />
+            <datalist id="visitor-names">
+              {visitors.map((v) => (
+                <option key={v._id} value={v.name} />
+              ))}
+            </datalist>
+          </section>
+
+          {/* Poznámka */}
+          <section>
+            <label className="text-xs text-text-secondary block mb-1">Poznámka</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Volitelná poznámka k rezervaci…"
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg border border-secondary bg-primary text-text-primary text-sm resize-none"
+            />
           </section>
 
           {/* Termín */}
-          <section className="grid grid-cols-3 gap-2">
+          <section className="grid grid-cols-2 gap-3">
             <label className="text-xs text-text-secondary">
-              Datum rezervace
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary" />
+              Od
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary mt-1" />
             </label>
             <label className="text-xs text-text-secondary">
-              Pobyt od
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary" />
+              Do
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary mt-1" />
             </label>
-            <label className="text-xs text-text-secondary">
-              Pobyt do
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary" />
-            </label>
-          </section>
-
-          {/* Položky */}
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-text-primary">Položky</h3>
-              <button type="button" onClick={addItem} className="text-link text-sm hover:underline">
-                + přidat položku
-              </button>
-            </div>
-            <div className="space-y-2">
-              {items.map((it, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <select
-                    value={it.productId}
-                    onChange={(e) => patchItem(i, { productId: e.target.value })}
-                    className="flex-1 px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary text-sm"
-                  >
-                    {products.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name} ({p.price} Kč)
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    max={99}
-                    value={it.quantity}
-                    onChange={(e) => patchItem(i, { quantity: Number(e.target.value) })}
-                    className="w-16 px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary text-sm"
-                    title="Počet"
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="noci"
-                    value={it.duration ?? ""}
-                    onChange={(e) => patchItem(i, { duration: e.target.value ? Number(e.target.value) : undefined })}
-                    className="w-20 px-2 py-1.5 rounded-lg border border-secondary bg-primary text-text-primary text-sm"
-                    title="Délka (noci)"
-                  />
-                  <button type="button" onClick={() => removeItem(i)} className="text-error text-sm px-1" title="Odebrat">
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
           </section>
 
           {/* SPZ */}
           <section>
-            <h3 className="text-sm font-semibold text-text-primary mb-2">SPZ pobytu (whitelist v termínu)</h3>
+            <label className="text-xs text-text-secondary block mb-2">SPZ (whitelist v termínu)</label>
             <div className="flex gap-2 mb-2">
               <input
                 value={plateText}
