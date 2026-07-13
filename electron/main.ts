@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, session } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -31,11 +31,16 @@ let win: BrowserWindow | null
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false; // Changed to false for manual control
 
-// Disable signature verification for development
-process.env.ELECTRON_IS_DEV = '1';
-process.env.ELECTRON_UPDATER_DISABLE_SIGNATURE_VALIDATION = 'true';
-process.env.ELECTRON_UPDATER_ALLOW_UNTRUSTED_CERTS = 'true';
-process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+// BEZPEČNOST (prod-check): ověřování podpisu a TLS aktualizací se smí vypnout
+// VÝHRADNĚ v dev buildu. V zabaleném (produkčním) buildu MUSÍ zůstat zapnuté —
+// jinak by šlo na POS terminály podstrčit neověřený update (RCE). Produkční
+// buildy proto musí být code-signed (viz electron-builder konfigurace).
+if (!app.isPackaged) {
+  process.env.ELECTRON_IS_DEV = '1';
+  process.env.ELECTRON_UPDATER_DISABLE_SIGNATURE_VALIDATION = 'true';
+  process.env.ELECTRON_UPDATER_ALLOW_UNTRUSTED_CERTS = 'true';
+  process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+}
 
 // Development settings
 console.log('Configuring auto-updater...');
@@ -205,9 +210,38 @@ app.on('activate', () => {
   }
 })
 
+// Content-Security-Policy (prod-check H3). Aplikuje se jen v zabaleném buildu,
+// ať nekoliduje s Vite HMR v devu. Blokuje pluginy (object-src none), embedování
+// (frame-ancestors none) a omezuje zdroje; connect-src povoluje API (http/https)
+// a lokální RTSP relay (ws://127.0.0.1). script/style 'unsafe-inline' kvůli
+// inline JSMpeg loaderu v index.html.
+function applyCsp() {
+  if (!app.isPackaged) return
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https: http:",
+    "media-src 'self' blob:",
+    "connect-src 'self' http: https: ws: wss:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ')
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp],
+      },
+    })
+  })
+}
+
 app.whenReady().then(() => {
+  applyCsp()
   createWindow()
-  
+
   // Setup IPC handlers for RTSP streams
   ipcMain.handle('start-rtsp-stream', async (event, rtspUrl: string, streamId: string) => {
     try {

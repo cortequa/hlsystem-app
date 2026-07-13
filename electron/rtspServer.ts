@@ -10,6 +10,12 @@ import { exec } from 'child_process';
 
 const execAsync = promisify(exec);
 
+// RTSP URL může obsahovat přihlašovací údaje kamery (rtsp://user:pass@host).
+// Do logů je nikdy nepíšeme v plaintextu (prod-check).
+function redactRtspUrl(url: string): string {
+  return url.replace(/(rtsp:\/\/)[^@/]+@/i, '$1***@');
+}
+
 // Get FFmpeg path
 function getFFmpegPath(): string {
   // Try simple 'ffmpeg' command first
@@ -348,7 +354,7 @@ export class RTSPStreamServer {
     }
 
     // Test RTSP connection first
-    console.log(`🔄 Testing RTSP connection for ${streamId}: ${rtspUrl}`);
+    console.log(`🔄 Testing RTSP connection for ${streamId}: ${redactRtspUrl(rtspUrl)}`);
     const connectionTest = await testRTSPConnection(rtspUrl, 15000);
     
     if (!connectionTest.success) {
@@ -377,7 +383,7 @@ export class RTSPStreamServer {
     const wsServer = new WebSocketServer({ server });
     
     // Test RTSP URL first
-    console.log(`Testing RTSP connection for ${streamId}: ${rtspUrl}`);
+    console.log(`Testing RTSP connection for ${streamId}: ${redactRtspUrl(rtspUrl)}`);
     
     // Optimalizované FFmpeg parametry pro nižší zátěž CPU
     const ffmpegArgs = [
@@ -423,10 +429,10 @@ export class RTSPStreamServer {
       '-'
     ];
 
-    // Start FFmpeg process
-    console.log(`Starting FFmpeg for stream ${streamId} with URL: ${rtspUrl}`);
-    console.log(`FFmpeg args:`, ffmpegArgs);
-    
+    // Start FFmpeg process (URL redigované — může obsahovat creds kamery).
+    console.log(`Starting FFmpeg for stream ${streamId} with URL: ${redactRtspUrl(rtspUrl)}`);
+    console.log(`FFmpeg args:`, ffmpegArgs.map((a) => (a === rtspUrl ? redactRtspUrl(a) : a)));
+
     const ffmpegPath = getFFmpegPath();
     console.log(`Using FFmpeg path: ${ffmpegPath}`);
     
@@ -480,9 +486,11 @@ export class RTSPStreamServer {
       });
     });
 
-    // Start HTTP server
-    server.listen(port, () => {
-      console.log(`RTSP stream server running on port ${port} for stream ${streamId}`);
+    // Start HTTP server — BIND JEN NA LOCALHOST (renderer se připojuje na
+    // ws://127.0.0.1:port). Bez explicitního hostu by ws relay poslouchal na
+    // 0.0.0.0 a kamerový stream by byl dostupný komukoli v LAN (prod-check).
+    server.listen(port, '127.0.0.1', () => {
+      console.log(`RTSP stream server running on 127.0.0.1:${port} for stream ${streamId}`);
     });
 
     // Store stream instance
