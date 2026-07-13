@@ -213,7 +213,6 @@ export default function Sales() {
             setSelectedOrder(null);
         } catch (error) {
             console.error('Failed to delete order:', error);
-            alert('Failed to delete order. Please try again.');
         }
     };
 
@@ -240,14 +239,11 @@ export default function Sales() {
             // Print receipt
             const printResult = await printerService.printReceipt(receiptData);
             
-            if (printResult.success) {
-                alert('Účtenka byla úspěšně vytisknuta!');
-            } else {
-                alert(`Tisk účtenky selhal: ${printResult.error}`);
+            if (!printResult.success) {
+                console.warn('Tisk účtenky selhal:', printResult.error);
             }
         } catch (error) {
             console.error('Failed to print receipt:', error);
-            alert('Nepodařilo se vytisknout účtenku. Zkuste to znovu.');
         } finally {
             setIsPrinting(null);
         }

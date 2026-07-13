@@ -39,7 +39,6 @@ export default function LicensePlates() {
   }, [refresh]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Opravdu smazat tuto SPZ?")) return;
     try {
       await licensePlateService.remove(id);
       await refresh();

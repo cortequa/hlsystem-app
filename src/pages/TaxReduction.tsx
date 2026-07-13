@@ -53,21 +53,13 @@ export default function TaxReduction() {
 
   const handleTaxReduction = async () => {
     if (!selectedProduct || quantity <= 0) {
-      alert('Vyberte položku a zadejte množství pro optimalizaci.');
       return;
     }
 
     const selectedProductData = products.find(p => p._id === selectedProduct);
     if (!selectedProductData) {
-      alert('Vybraná položka nebyla nalezena.');
       return;
     }
-
-    const confirmed = confirm(
-      `Opravdu chcete optimalizovat náklady odstraněním ${quantity} kusů položky "${selectedProductData.name}" z historických transakcí?\n\nTato optimalizace je nevratná!`
-    );
-
-    if (!confirmed) return;
 
     try {
       setIsProcessing(true);
@@ -86,17 +78,16 @@ export default function TaxReduction() {
           ? `Náklady úspěšně optimalizovány! Odstraněno ${result.removedQuantity} z požadovaných ${quantity} kusů položky "${selectedProductData.name}" z ${result.ordersAffected} transakcí.\n\nÚspora: ${formatCurrency(selectedProductData.price * result.removedQuantity)}`
           : `Náklady úspěšně optimalizovány! Odstraněno ${result.removedQuantity} kusů položky "${selectedProductData.name}" z ${result.ordersAffected} transakcí.\n\nÚspora: ${formatCurrency(selectedProductData.price * result.removedQuantity)}`;
 
-        alert(message);
+        console.log(message);
         
         // Reset form
         setSelectedProduct('');
         setQuantity(0);
       } else {
-        alert(`Chyba při optimalizaci nákladů: ${result.error}`);
+        console.error('Chyba při optimalizaci nákladů:', result.error);
       }
     } catch (error) {
       console.error('Error during cost reduction:', error);
-      alert('Došlo k chybě při optimalizaci nákladů. Zkuste to znovu.');
     } finally {
       setIsProcessing(false);
     }

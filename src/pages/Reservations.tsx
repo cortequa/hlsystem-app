@@ -61,7 +61,6 @@ export default function Reservations() {
   };
 
   const cancel = async (order: Order) => {
-    if (!confirm("Opravdu zrušit tuto rezervaci? Smažou se i navázané SPZ.")) return;
     try {
       const linked = platesByOrder.get(order._id) ?? [];
       await Promise.all(linked.map((p) => licensePlateService.remove(p._id)));

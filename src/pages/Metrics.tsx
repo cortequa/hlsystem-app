@@ -170,14 +170,11 @@ export default function Metrics() {
       // Print receipt
       const printResult = await printerService.printReceipt(receiptData);
       
-      if (printResult.success) {
-        alert('Přehled prodejů byl úspěšně vytisknut!');
-      } else {
-        alert(`Tisk přehledu selhal: ${printResult.error}`);
+      if (!printResult.success) {
+        console.warn('Tisk přehledu selhal:', printResult.error);
       }
     } catch (error) {
       console.error('Failed to print metrics:', error);
-      alert('Nepodařilo se vytisknout přehled. Zkuste to znovu.');
     } finally {
       setIsPrinting(false);
     }

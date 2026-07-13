@@ -231,14 +231,11 @@ export default function Overview({ selectedProducts = [], onClearOrder }: Overvi
 
             clearOrder();
 
-            if (printResult.success) {
-                alert(`Objednávka dokončena a účtenka vytisknuta!\nCelková cena: ${formatPrice(totalPrice)}`);
-            } else {
-                alert(`Objednávka dokončena, ale tisk selhal: ${printResult.error}\nCelková cena: ${formatPrice(totalPrice)}`);
+            if (!printResult.success) {
+                console.warn('Tisk selhal:', printResult.error);
             }
         } catch (error) {
             console.error('Failed to complete sale:', error);
-            alert('Nepodařilo se dokončit prodej. Zkuste to znovu.');
         } finally {
             setIsProcessing(false);
         }

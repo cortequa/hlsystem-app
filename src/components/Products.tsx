@@ -78,7 +78,6 @@ export default function Products({ onSelectProduct }: ProductsProps) {
             setSelectedProduct(null);
         } catch (err) {
             console.error("Failed to update product:", err);
-            alert("Failed to update product. Please try again.");
         }
     };
 
@@ -97,7 +96,6 @@ export default function Products({ onSelectProduct }: ProductsProps) {
             setSelectedProduct(null);
         } catch (err) {
             console.error("Failed to delete product:", err);
-            alert("Failed to delete product. Please try again.");
         }
     };
 
@@ -118,7 +116,6 @@ export default function Products({ onSelectProduct }: ProductsProps) {
             setIsModalOpen(false);
         } catch (err) {
             console.error("Failed to create product:", err);
-            alert("Failed to create product. Please try again.");
         }
     };
 
