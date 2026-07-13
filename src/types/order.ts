@@ -12,6 +12,7 @@ export interface Order {
   items?: OrderItem[];
   totalPrice?: number;
   visitor?: Visitor | string;
+  note?: string;
   createdAt: string;
   completedAt?: string;
 }

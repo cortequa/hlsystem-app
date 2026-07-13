@@ -19,6 +19,12 @@ export interface OrderFilterParams {
     endDate: string;
 }
 
+export interface ReservationDto {
+  visitorId?: string;
+  note?: string;
+  date?: string;
+}
+
 export interface TaxReductionResult {
   success: boolean;
   removedQuantity: number;
@@ -81,6 +87,7 @@ export const orderService = {
             items: items,
             totalPrice: order.totalPrice || 0,
             visitor: order.visitor || order.visitorId,
+            note: order.note,
             createdAt: order.createdAt || order.date || new Date().toISOString(),
             completedAt: order.completedAt
         };
@@ -348,6 +355,31 @@ export const orderService = {
         ordersAffected: 0,
         error: error instanceof Error ? error.message : 'Neznámá chyba při krácení daní'
       };
+    }
+  },
+
+  async createReservation(data: ReservationDto): Promise<string> {
+    const response = await fetch(ENV.API.ENDPOINTS.ORDERS, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...data, products: [], date: data.date ?? new Date().toISOString() }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => null);
+      throw new Error(err?.message ?? 'Vytvoření rezervace selhalo.');
+    }
+    const result = await response.json();
+    return result.data?.orderId ?? result.orderId ?? result._id;
+  },
+
+  async updateReservation(id: string, data: ReservationDto): Promise<void> {
+    const response = await fetch(`${ENV.API.ENDPOINTS.ORDERS}/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      throw new Error('Aktualizace rezervace selhala.');
     }
   },
 };

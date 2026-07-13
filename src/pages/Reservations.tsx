@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { orderService } from "../services/orderService";
 import { visitorService } from "../services/visitorService";
-import { productService } from "../services/productService";
 import { licensePlateService } from "../services/licensePlateService";
 import { Order } from "../types/order";
 import { Visitor } from "../types/visitor";
-import { Product } from "../types/product";
 import { LicensePlate } from "../types/licensePlate";
 import ReservationModal, { ReservationAggregate } from "../components/ReservationModal";
 
 export default function Reservations() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [visitors, setVisitors] = useState<Visitor[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [plates, setPlates] = useState<LicensePlate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,15 +22,13 @@ export default function Reservations() {
     setLoading(true);
     setError(null);
     try {
-      const [ord, vis, prod, wl] = await Promise.all([
+      const [ord, vis, wl] = await Promise.all([
         orderService.getOrders(),
         visitorService.getVisitors(),
-        productService.getProducts(),
         licensePlateService.getWhitelist().catch(() => [] as LicensePlate[]),
       ]);
       setOrders(ord);
       setVisitors(vis);
-      setProducts(prod);
       setPlates(wl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Načtení rezervací selhalo.");
@@ -47,7 +42,6 @@ export default function Reservations() {
   }, [refresh]);
 
   const visitorMap = useMemo(() => new Map(visitors.map((v) => [v._id, v])), [visitors]);
-  const productMap = useMemo(() => new Map(products.map((p) => [p._id, p])), [products]);
   const platesByOrder = useMemo(() => {
     const m = new Map<string, LicensePlate[]>();
     for (const p of plates) {
@@ -106,19 +100,23 @@ export default function Reservations() {
             return (
               <div key={order._id} className="bg-secondary/30 rounded-xl p-4 flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span className="font-semibold text-text-primary">{visitorName(order)}</span>
-                    <span className="text-xs text-text-secondary">{formatDate(order.createdAt)}</span>
+                    {(() => {
+                      const froms = linked.map((p) => p.from).filter(Boolean) as string[];
+                      const tos = linked.map((p) => p.to).filter(Boolean) as string[];
+                      const from = froms.sort()[0];
+                      const to = tos.sort().slice(-1)[0];
+                      return (from || to) ? (
+                        <span className="text-xs text-text-secondary">
+                          {from ? formatDate(from) : "?"} – {to ? formatDate(to) : "?"}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
-                  <div className="text-sm text-text-secondary mt-1">
-                    {(order.items ?? [])
-                      .map((it) => {
-                        const id = typeof it.product === "string" ? it.product : it.product._id;
-                        const name = typeof it.product === "object" ? it.product.name : productMap.get(id)?.name ?? "položka";
-                        return `${name} ×${it.quantity}${it.duration ? ` (${it.duration} nocí)` : ""}`;
-                      })
-                      .join(", ") || "—"}
-                  </div>
+                  {order.note && (
+                    <div className="text-sm text-text-secondary mt-1">{order.note}</div>
+                  )}
                   {linked.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {linked.map((p) => (
@@ -146,7 +144,6 @@ export default function Reservations() {
       {modal.open && (
         <ReservationModal
           visitors={visitors}
-          products={products}
           reservation={modal.reservation}
           onClose={() => setModal({ open: false, reservation: null })}
           onSaved={() => {
