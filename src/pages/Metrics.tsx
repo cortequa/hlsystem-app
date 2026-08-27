@@ -1,157 +1,83 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { orderService, OrderFilterParams } from '../services/orderService';
-import { productService } from '../services/productService';
+import { orderService, OrderStats } from '../services/orderService';
 import { printerService } from '../services/printerService';
-import { ProductMetric, MetricItem, DateFilter } from '../types/metrics';
+import { DateFilter } from '../types/metrics';
+
+const EMPTY_STATS: OrderStats = {
+  periods: [],
+  products: [],
+  totalRevenue: 0,
+  orderCount: 0,
+};
+
+function toDayString(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
 export default function Metrics() {
   // Granularity control
   const [dateFilter, setDateFilter] = useState<DateFilter>('month');
-  
+
   // Always visible date range controls
   const [startDate, setStartDate] = useState<string>(() => {
     const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    return toDayString(new Date(now.getFullYear(), now.getMonth(), 1));
   });
-  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  
+  const [endDate, setEndDate] = useState<string>(() => toDayString(new Date()));
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [metrics, setMetrics] = useState<MetricItem[]>([]);
-  const [productTotals, setProductTotals] = useState<Record<string, ProductMetric>>({});
-  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [stats, setStats] = useState<OrderStats>(EMPTY_STATS);
   const [isPrinting, setIsPrinting] = useState(false);
-  
-  // Fetch orders and products on component mount
-  useEffect(() => {
-    fetchMetricsData();
-  }, []);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  // Combined function to fetch products and orders
-  const fetchMetricsData = async () => {
-    try {
-      setLoading(true);
-      
-      // Always use the selected date range
-      const params: OrderFilterParams = { startDate, endDate };
-      
-      // Get products data to ensure we have product names
-      const productsData = await productService.getProducts();
-      const productsMap = productsData.reduce((map, product) => {
-        map[product._id] = product;
-        return map;
-      }, {} as Record<string, any>);
-      
-      // Get filtered orders
-      const orders = await orderService.getFilteredOrders(params);
-      
-      // Aggregate data based on the selected granularity
-      const metricsMap: Record<string, MetricItem> = {};
-      const productMetrics: Record<string, ProductMetric> = {};
-      let totalRev = 0;
-      
-      orders.forEach(order => {
-        // Get order date and create key based on selected granularity
-        const orderDate = new Date(order.createdAt);
-        let periodKey: string;
-        
-        if (dateFilter === 'day') {
-          periodKey = orderDate.toISOString().split('T')[0]; // YYYY-MM-DD
-        } else if (dateFilter === 'month') {
-          periodKey = `${orderDate.getFullYear()}-${String(orderDate.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
-        } else { // year
-          periodKey = `${orderDate.getFullYear()}`; // YYYY
-        }
-        
-        // Initialize period metrics if it doesn't exist
-        if (!metricsMap[periodKey]) {
-          metricsMap[periodKey] = {
-            label: periodKey,
-            totalRevenue: 0,
-            products: {}
-          };
-        }
-        
-        // Process each item in the order
-        order.items?.forEach(item => {
-          const productId = typeof item.product === 'string' 
-            ? item.product 
-            : (item.product?._id || 'unknown');
-            
-          const product = productsMap[productId] || 
-            (typeof item.product === 'object' ? item.product : { name: 'Unknown Product', price: 0 });
-            
-          const productName = product.name || 'Unknown Product';
-          const price = typeof product === 'object' ? (product.price || 0) : 0;
-          const quantity = item.quantity || 0;
-          const itemRevenue = price * quantity;
-          
-          // Update period metrics
-          if (!metricsMap[periodKey].products[productId]) {
-            metricsMap[periodKey].products[productId] = {
-              _id: productId,
-              name: productName,
-              quantity: 0,
-              revenue: 0
-            };
-          }
-          metricsMap[periodKey].products[productId].quantity += quantity;
-          metricsMap[periodKey].products[productId].revenue += itemRevenue;
-          metricsMap[periodKey].totalRevenue += itemRevenue;
-          
-          // Update overall product metrics
-          if (!productMetrics[productId]) {
-            productMetrics[productId] = {
-              _id: productId,
-              name: productName,
-              quantity: 0,
-              revenue: 0
-            };
-          }
-          productMetrics[productId].quantity += quantity;
-          productMetrics[productId].revenue += itemRevenue;
-          
-          // Update total revenue
-          totalRev += itemRevenue;
-        });
+  const { periods, products, totalRevenue } = stats;
+
+  /**
+   * Tržby počítá databáze jednou agregací. Dřív se kvůli tomu stahovala celá
+   * kolekce objednávek i ceník a všechno se sčítalo v prohlížeči — a kvůli
+   * dvěma efektům na mountu rovnou dvakrát.
+   */
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    setLoading(true);
+    orderService
+      .getStats({ startDate, endDate }, dateFilter, controller.signal)
+      .then((result) => {
+        if (!active) return;
+        setStats(result);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (!active || (err instanceof Error && err.name === 'AbortError')) return;
+        console.error('Error fetching metrics data:', err);
+        setError('Načtení metrik se nezdařilo. Zkuste to prosím znovu.');
+        setStats(EMPTY_STATS);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
-      
-      // Convert metrics map to array and sort by period
-      const metricsArray = Object.values(metricsMap).sort((a, b) => a.label.localeCompare(b.label));
-      
-      setMetrics(metricsArray);
-      setProductTotals(productMetrics);
-      setTotalRevenue(totalRev);
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching metrics data:', err);
-      setError('Failed to load metrics data. Please try again later.');
-      setMetrics([]);
-      setProductTotals({});
-      setTotalRevenue(0);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  // Apply date filter or range changes
-  useEffect(() => {
-    // Clear existing metrics when changing granularity to prevent format mismatches
-    setMetrics([]);
-    fetchMetricsData();
-  }, [dateFilter, startDate, endDate]);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [dateFilter, startDate, endDate, reloadToken]);
+
+  const refresh = useCallback(() => setReloadToken((t) => t + 1), []);
 
   // Handle printing metrics summary
   const handlePrintMetrics = async () => {
     try {
       setIsPrinting(true);
       
-      // Get all products sorted by revenue (highest first)
-      const productsSorted = Object.values(productTotals)
-        .filter(product => product.quantity > 0) // Only products that were sold
-        .sort((a, b) => b.revenue - a.revenue);
-      
+      // Agregace přichází ze serveru už seřazená podle tržby.
+      const productsSorted = products.filter(product => product.quantity > 0);
+
       // Prepare receipt data for metrics summary - simple format
       const receiptData = {
         orderNumber: `PŘEHLED-${Date.now()}`,
@@ -231,27 +157,14 @@ export default function Metrics() {
   };
 
   // Prepare chart data
-  const chartData = metrics.map(metric => {
-    const data: any = {
-      period: formatPeriodLabel(metric.label),
-      "Celkem": metric.totalRevenue
-    };
-    
-    // Add top products data (optional: can limit to top 3-5 products if needed)
-    Object.values(metric.products)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 3) // Include only top 3 products in chart
-      .forEach(product => {
-        data[product.name] = product.revenue;
-      });
-    
-    return data;
-  });
+  const chartData = periods.map(period => ({
+    period: formatPeriodLabel(period.key),
+    Celkem: period.revenue,
+  }));
 
-  // Get top selling products
-  const topProducts = Object.values(productTotals)
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
+  // Agregace je seřazená podle tržby sestupně — stačí useknout.
+  const topProducts = products.slice(0, 5);
+  const totalQuantity = products.reduce((sum, product) => sum + product.quantity, 0);
 
   return (
     <div className="flex w-full h-screen">
@@ -317,7 +230,7 @@ export default function Metrics() {
             </div>
 
             <button
-              onClick={() => fetchMetricsData()}
+              onClick={refresh}
               className="px-3 py-1 bg-link text-primary rounded-md text-sm hover:bg-link/80 transition-colors"
             >
               Obnovit
@@ -372,12 +285,12 @@ export default function Metrics() {
                   </div>
                   <div className="bg-secondary/50 rounded-md p-4">
                     <div className="text-text-secondary text-sm">Produktů celkem</div>
-                    <div className="text-2xl font-bold text-text-primary">{Object.keys(productTotals).length}</div>
+                    <div className="text-2xl font-bold text-text-primary">{products.length}</div>
                   </div>
                   <div className="bg-secondary/50 rounded-md p-4">
                     <div className="text-text-secondary text-sm">Prodaných kusů</div>
                     <div className="text-2xl font-bold text-text-primary">
-                      {Object.values(productTotals).reduce((sum, product) => sum + product.quantity, 0)}
+                      {totalQuantity}
                     </div>
                   </div>
                 </div>
@@ -398,7 +311,7 @@ export default function Metrics() {
                     </thead>
                     <tbody>
                       {topProducts.map((product, index) => (
-                        <tr key={product._id} className="border-b border-secondary/20">
+                        <tr key={product.productId} className="border-b border-secondary/20">
                           <td className="px-3 py-2 text-text-secondary">{index + 1}</td>
                           <td className="px-3 py-2 text-text-primary">{product.name}</td>
                           <td className="px-3 py-2 text-right text-text-primary">{product.quantity}</td>
@@ -477,7 +390,7 @@ export default function Metrics() {
                       : 'Detaily po letech'
                   }
                 </h2>
-                {metrics.length > 0 ? (
+                {periods.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm text-text-primary">
                       <thead className="text-xs uppercase bg-secondary/30">
@@ -488,24 +401,21 @@ export default function Metrics() {
                         </tr>
                       </thead>
                       <tbody>
-                        {metrics.map((metric) => {
-                          const topProduct = Object.values(metric.products)
-                            .sort((a, b) => b.revenue - a.revenue)[0];
-                          
-                          return (
-                            <tr key={metric.label} className="border-b border-secondary/20">
-                              <td className="px-4 py-3 font-medium">
-                                {formatPeriodLabel(metric.label)}
-                              </td>
-                              <td className="px-4 py-3">
-                                {topProduct ? `${topProduct.name} (${topProduct.quantity}ks)` : 'Žádné prodeje'}
-                              </td>
-                              <td className="px-4 py-3 text-right font-medium">
-                                {formatCurrency(metric.totalRevenue)}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                        {periods.map((period) => (
+                          <tr key={period.key} className="border-b border-secondary/20">
+                            <td className="px-4 py-3 font-medium">
+                              {formatPeriodLabel(period.key)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {period.topProduct
+                                ? `${period.topProduct.name} (${period.topProduct.quantity}ks)`
+                                : 'Žádné prodeje'}
+                            </td>
+                            <td className="px-4 py-3 text-right font-medium">
+                              {formatCurrency(period.revenue)}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>

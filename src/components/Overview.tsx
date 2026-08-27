@@ -2,14 +2,52 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Product as ProductType } from "../types/product";
 import { OrderProduct } from "../types/order";
 import { orderService, CreateOrderDto } from "../services/orderService";
+import { pendingArrivalService } from "../services/pendingArrivalService";
 import { printerService } from "../services/printerService";
+import { stayService } from "../services/stayService";
+import { splitName } from "../types/visitor";
+
+/** Prodej vázaný na auto u brány — SPZ i karta, kterou má prodej vyřídit. */
+export interface TicketContext {
+    plate: string;
+    pendingArrivalId?: string;
+}
 
 interface OverviewProps {
     selectedProducts?: ProductType[];
     onClearOrder?: () => void;
+    /** Předvyplněná SPZ z čekajícího vozu. */
+    ticketContext?: TicketContext | null;
+    onTicketResolved?: () => void;
 }
 
-export default function Overview({ selectedProducts = [], onClearOrder }: OverviewProps) {
+/** Výchozí délka pobytu prodaného u brány, dokud obsluha neurčí jinak. */
+const DEFAULT_NIGHTS = 1;
+
+const todayStart = (): Date => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+export default function Overview({
+    selectedProducts = [],
+    onClearOrder,
+    ticketContext = null,
+    onTicketResolved,
+}: OverviewProps) {
+    // Prodej s SPZ zakládá pobyt, ne holou účtenku — jinak by lístek
+    // nevytvořil žádné oprávnění k vjezdu a brána by auto nepustila.
+    const [plate, setPlate] = useState("");
+    const [guestName, setGuestName] = useState("");
+    const [nights, setNights] = useState(DEFAULT_NIGHTS);
+    const [saleError, setSaleError] = useState<string | null>(null);
+
+    // Kliknutí na „Prodat lístek" u čekajícího vozu předvyplní SPZ.
+    useEffect(() => {
+        if (ticketContext?.plate) setPlate(ticketContext.plate);
+    }, [ticketContext]);
+
     const [orderProducts, setOrderProducts] = useState<OrderProduct[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [lastAddedItemId, setLastAddedItemId] = useState<string | null>(null);
@@ -104,6 +142,10 @@ export default function Overview({ selectedProducts = [], onClearOrder }: Overvi
         setLastAddedItemId(null);
         setQuantityInput('');
         setIsFirstInput(true);
+        setPlate('');
+        setGuestName('');
+        setNights(DEFAULT_NIGHTS);
+        setSaleError(null);
         onClearOrder?.();
     };
 
@@ -194,26 +236,69 @@ export default function Overview({ selectedProducts = [], onClearOrder }: Overvi
         }
     };
 
-    // Handle completing the sale
+    /**
+     * Dokončení prodeje.
+     *
+     * Bez SPZ je to běžný prodej v bufetu → holá účtenka. S SPZ jde o lístek
+     * ke vjezdu, a ten musí založit POBYT — účtenka sama žádné oprávnění
+     * k vjezdu nevytváří a brána by auto nepustila. `POST /stays` založí
+     * obojí najednou, takže obsluze nemůže zůstat zaplacený lístek bez
+     * pobytu (ani naopak).
+     */
     const handleCompleteSale = async () => {
         if (orderProducts.length === 0 || isProcessing) return;
 
+        const products = orderProducts.map(item => ({
+            productId: item.product._id,
+            quantity: item.quantity,
+        }));
+
         try {
             setIsProcessing(true);
+            setSaleError(null);
 
-            const orderData: CreateOrderDto = {
-                products: orderProducts.map(item => ({
-                    productId: item.product._id,
-                    quantity: item.quantity,
-                })),
-                date: new Date().toISOString()
-            };
+            const trimmedPlate = plate.trim().toUpperCase();
+            let receiptNumber: string;
 
-            const orderId = await orderService.createOrder(orderData);
+            if (trimmedPlate) {
+                const visitor = splitName(guestName) ?? { lastName: 'Host' };
+                const from = todayStart();
+                const to = new Date(from);
+                to.setDate(to.getDate() + Math.max(1, nights));
+
+                const result = await stayService.create({
+                    visitor,
+                    from: from.toISOString(),
+                    to: to.toISOString(),
+                    vehicles: [{ plate: trimmedPlate }],
+                    products,
+                });
+                receiptNumber = result.orderId ?? result.stayId;
+
+                // Karta u brány se zavře až po úspěšném založení pobytu.
+                // Podle politiky brány se přitom závora otevře (`auto_open`),
+                // nebo počká na ruční potvrzení obsluhy (`confirm`).
+                if (ticketContext?.pendingArrivalId) {
+                    await pendingArrivalService
+                        .link(ticketContext.pendingArrivalId, result.stayId)
+                        .catch((err: unknown) => {
+                            // Pobyt existuje a je zaplacený — SPZ je v něm.
+                            // Neúspěšné zavření karty prodej neruší.
+                            console.warn('Karta u brány se nezavřela:', err);
+                        });
+                    onTicketResolved?.();
+                }
+            } else {
+                const orderData: CreateOrderDto = {
+                    products,
+                    date: new Date().toISOString(),
+                };
+                receiptNumber = await orderService.createOrder(orderData);
+            }
 
             // Připravení dat pro tisk
             const receiptData = {
-                orderNumber: orderId || 'N/A',
+                orderNumber: receiptNumber || 'N/A',
                 date: new Date().toLocaleString('cs-CZ'),
                 items: orderProducts.map(item => ({
                     name: item.product.name,
@@ -236,6 +321,9 @@ export default function Overview({ selectedProducts = [], onClearOrder }: Overvi
             }
         } catch (error) {
             console.error('Failed to complete sale:', error);
+            setSaleError(
+                error instanceof Error ? error.message : 'Prodej se nepodařilo dokončit.',
+            );
         } finally {
             setIsProcessing(false);
         }
@@ -324,6 +412,40 @@ export default function Overview({ selectedProducts = [], onClearOrder }: Overvi
                     </div>
 
                     <div className="mt-4 border-t border-text-secondary/10 pt-4">
+                        {/* Vyplněná SPZ dělá z prodeje lístek ke vjezdu: založí
+                            pobyt, ne holou účtenku. Prázdná = běžný prodej. */}
+                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 mb-3">
+                            <input
+                                value={plate}
+                                onChange={(e) => setPlate(e.target.value)}
+                                placeholder="SPZ (volitelné)"
+                                className="px-2 py-1.5 rounded-md bg-secondary/40 text-text-primary font-mono uppercase text-sm placeholder-text-secondary"
+                            />
+                            <input
+                                value={guestName}
+                                onChange={(e) => setGuestName(e.target.value)}
+                                placeholder="Jméno hosta"
+                                disabled={!plate.trim()}
+                                className="px-2 py-1.5 rounded-md bg-secondary/40 text-text-primary text-sm placeholder-text-secondary disabled:opacity-40"
+                            />
+                            <div className="flex items-center gap-1">
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={60}
+                                    value={nights}
+                                    onChange={(e) => setNights(Number(e.target.value) || 1)}
+                                    disabled={!plate.trim()}
+                                    className="w-14 px-2 py-1.5 rounded-md bg-secondary/40 text-text-primary text-sm disabled:opacity-40"
+                                />
+                                <span className="text-text-secondary text-xs">nocí</span>
+                            </div>
+                        </div>
+
+                        {saleError && (
+                            <div className="text-error text-xs mb-2">{saleError}</div>
+                        )}
+
                         <div className="flex justify-between items-center mb-4">
                             <span className="text-text-primary font-medium">Celkem</span>
                             <span className="text-text-primary text-xl font-bold">{formatPrice(totalPrice)}</span>
@@ -343,7 +465,7 @@ export default function Overview({ selectedProducts = [], onClearOrder }: Overvi
                                     Zpracování...
                                 </div>
                             ) : (
-                                'Dokončit prodej'
+                                plate.trim() ? 'Prodat a pustit' : 'Dokončit prodej'
                             )}
                         </button>
                     </div>

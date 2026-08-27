@@ -15,6 +15,8 @@ export default function RTSPStream({ rtspUrl, streamId, className = '' }: RTSPSt
   const [isConnecting, setIsConnecting] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     const initStream = async () => {
       try {
         setIsConnecting(true);
@@ -24,6 +26,7 @@ export default function RTSPStream({ rtspUrl, streamId, className = '' }: RTSPSt
           setError('Electron API not available');
           return;
         }
+        if (cancelled) return;
 
         // Start the RTSP stream on the backend
         const response = await window.electronAPI.startRTSPStream(rtspUrl, streamId);
@@ -63,9 +66,17 @@ export default function RTSPStream({ rtspUrl, streamId, className = '' }: RTSPSt
       }
     };
 
-    initStream();
+    // Start streamu se odkládá až za první vykreslení. `startRTSPStream`
+    // spouští v main procesu ffmpeg (a při prvním volání i hledání jeho cesty),
+    // což je nejpomalejší část startu aplikace — takhle se pokladna zobrazí
+    // hned a video dojede za ní.
+    const idle = window.requestIdleCallback?.(() => initStream(), { timeout: 1000 });
+    const fallback = idle === undefined ? window.setTimeout(initStream, 0) : undefined;
 
     return () => {
+      cancelled = true;
+      if (idle !== undefined) window.cancelIdleCallback?.(idle);
+      if (fallback !== undefined) window.clearTimeout(fallback);
       // Cleanup
       if (playerRef.current) {
         playerRef.current.destroy?.();

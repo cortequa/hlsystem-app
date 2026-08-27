@@ -29,9 +29,14 @@ export const ENV = {
       VISITORS: `${API}/visitors`,
       GATES: `${API}/gates`,
       ORDERS: `${API}/orders`,
+      // Pobyty = rezervace s vozidly (dřív se rezervace tvářily jako účtenky).
+      STAYS: `${API}/stays`,
       // Sprint 4: reálné endpointy core API (starý neexistující `/entries` odstraněn).
       LICENSE_PLATES: `${API}/license-plates`,
       ACCESS_EVENTS: `${API}/access-events`,
+      // Auta čekající u brány — fronta pro recepci.
+      PENDING_ARRIVALS: `${API}/pending-arrivals`,
+      PRESENCE: `${API}/presence`,
     },
   },
 };

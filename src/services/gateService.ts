@@ -1,5 +1,5 @@
 import { ENV } from "../config/env";
-import { http } from "./http";
+import { buildQuery, http, Paged, toPaged } from "./http";
 import { Gate, GateOperation } from "../types/gate";
 
 const GATES = ENV.API.ENDPOINTS.GATES;
@@ -43,6 +43,9 @@ export async function toggleGate(gateId: string): Promise<GateCommandResult> {
 
 /** Auditní historie ovládacích operací brány. */
 export async function getGateOperations(gateId: string): Promise<GateOperation[]> {
-  const data = await http.get<GateOperation[]>(`${GATES}/${gateId}/operations?limit=50`);
-  return Array.isArray(data) ? data : [];
+  // S `limit` vrací API stránkovanou obálku, ne pole — `toPaged` sjednotí obojí.
+  const data = await http.get<GateOperation[] | Paged<GateOperation>>(
+    `${GATES}/${gateId}/operations${buildQuery({ limit: 50 })}`,
+  );
+  return toPaged(data).items;
 }

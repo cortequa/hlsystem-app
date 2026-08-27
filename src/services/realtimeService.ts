@@ -14,6 +14,9 @@ export const RealtimeEvents = {
   gateClosed: "gateClosed",
   gateOperation: "gateOperation",
   accessEvent: "accessEvent",
+  /** Auto čeká u brány — kvůli téhle události o něm recepce vůbec ví. */
+  pendingArrival: "pendingArrival",
+  pendingArrivalResolved: "pendingArrivalResolved",
   licensePlateUploaded: "licensePlateUploaded",
 } as const;
 

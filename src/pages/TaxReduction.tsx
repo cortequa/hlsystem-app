@@ -14,6 +14,15 @@ export default function TaxReduction() {
   const [quantity, setQuantity] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [dateMode, setDateMode] = useState<'day' | 'month'>('day');
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  });
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [reductionHistory, setReductionHistory] = useState<Array<{
     date: string;
     productName: string;
@@ -63,7 +72,24 @@ export default function TaxReduction() {
 
     try {
       setIsProcessing(true);
-      const result = await orderService.reduceTaxForProduct(selectedProduct, quantity);
+
+      // Vypočítáme datový rozsah podle zvoleného režimu
+      let dateRange: { from: string; to: string };
+      if (dateMode === 'day') {
+        const [y, m, d] = selectedDate.split('-').map(Number);
+        dateRange = {
+          from: new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0).toISOString(),
+          to: new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59, 999).toISOString(),
+        };
+      } else {
+        const [y, m] = selectedMonth.split('-').map(Number);
+        dateRange = {
+          from: new Date(y, (m ?? 1) - 1, 1, 0, 0, 0, 0).toISOString(),
+          to: new Date(y, m ?? 1, 0, 23, 59, 59, 999).toISOString(),
+        };
+      }
+
+      const result = await orderService.reduceTaxForProduct(selectedProduct, quantity, dateRange);
       
       if (result.success) {
         // Save to history
@@ -158,6 +184,56 @@ export default function TaxReduction() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
+                    Období optimalizace
+                  </label>
+                  <div className="flex gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setDateMode('day')}
+                      className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                        dateMode === 'day'
+                          ? 'bg-link text-white'
+                          : 'bg-secondary text-text-secondary hover:bg-secondary/80'
+                      }`}
+                      disabled={isProcessing}
+                    >
+                      Konkrétní den
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDateMode('month')}
+                      className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                        dateMode === 'month'
+                          ? 'bg-link text-white'
+                          : 'bg-secondary text-text-secondary hover:bg-secondary/80'
+                      }`}
+                      disabled={isProcessing}
+                    >
+                      Celý měsíc
+                    </button>
+                  </div>
+
+                  {dateMode === 'day' ? (
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-secondary border border-text-secondary/20 rounded-md text-text-primary focus:outline-none focus:ring-2 focus:ring-link"
+                      disabled={isProcessing}
+                    />
+                  ) : (
+                    <input
+                      type="month"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="w-full px-3 py-2 bg-secondary border border-text-secondary/20 rounded-md text-text-primary focus:outline-none focus:ring-2 focus:ring-link"
+                      disabled={isProcessing}
+                    />
+                  )}
+                </div>
+
                 {selectedProductData && quantity > 0 && (
                   <div className="bg-secondary/50 p-4 rounded-md">
                     <h3 className="font-medium text-text-primary mb-2">Přehled optimalizace</h3>
@@ -165,6 +241,10 @@ export default function TaxReduction() {
                       <div>Položka: {selectedProductData.name}</div>
                       <div>Jednotková cena: {formatCurrency(selectedProductData.price)}</div>
                       <div>Množství: {quantity} ks</div>
+                      <div>Období: {dateMode === 'day'
+                        ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('cs-CZ')
+                        : new Date(selectedMonth + '-01T00:00:00').toLocaleDateString('cs-CZ', { year: 'numeric', month: 'long' })
+                      }</div>
                       <div className="font-medium text-success">
                         Úspora nákladů: {formatCurrency(estimatedValue)}
                       </div>

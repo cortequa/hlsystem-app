@@ -1,12 +1,10 @@
 import express from 'express';
 import { Server } from 'http';
 import { WebSocketServer } from 'ws';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, exec, ChildProcess } from 'child_process';
 import { createServer } from 'http';
 import path from 'path';
-import { execSync } from 'child_process';
 import { promisify } from 'util';
-import { exec } from 'child_process';
 
 const execAsync = promisify(exec);
 
@@ -16,60 +14,66 @@ function redactRtspUrl(url: string): string {
   return url.replace(/(rtsp:\/\/)[^@/]+@/i, '$1***@');
 }
 
-// Get FFmpeg path
-function getFFmpegPath(): string {
-  // Try simple 'ffmpeg' command first
+/**
+ * Kandidáti na umístění ffmpeg, v pořadí od nejpravděpodobnějšího.
+ * `%USERNAME%` se rozbalí až při testování.
+ */
+const FFMPEG_CANDIDATES = [
+  'ffmpeg',
+  'C:\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\ffmpeg\\ffmpeg-2025-07-10-git-82aeee3c19-essentials_build\\bin\\ffmpeg.exe',
+  'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\Users\\%USERNAME%\\Downloads\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe',
+  'C:\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe',
+];
+
+const FFMPEG_NOT_FOUND =
+  'FFmpeg not found. Please install FFmpeg:\n' +
+  '1. Download from https://ffmpeg.org/download.html\n' +
+  '2. Extract to C:\\ffmpeg\\ or add to PATH\n' +
+  '3. Or try: winget install Gyan.FFmpeg';
+
+/**
+ * Výsledek hledání ffmpeg se drží po celý běh aplikace.
+ *
+ * Dřív se sondy pouštěly znovu při KAŽDÉM volání (a to jsou čtyři místa,
+ * plus dva streamy na bránu). Navíc přes `execSync`, takže blokovaly main
+ * proces — a s ním veškerou IPC komunikaci — než se objevil obraz. Když
+ * ffmpeg chyběl, protočilo se osm sond s 5s timeoutem za sebou.
+ *
+ * Drží se i neúspěch: opakované hledání by nic nového nenašlo.
+ */
+let ffmpegPathPromise: Promise<string> | null = null;
+
+async function probe(command: string): Promise<boolean> {
   try {
-    execSync('ffmpeg -version', { stdio: 'ignore', timeout: 5000 });
-    console.log('FFmpeg found in PATH');
-    return 'ffmpeg';
-  } catch (e) {
-    console.log('FFmpeg not found in PATH');
+    await execAsync(`${command} -version`, { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
   }
-  
-  // Try common installation paths
-  const commonPaths = [
-    'C:\\ffmpeg\\bin\\ffmpeg.exe',
-    'C:\\ffmpeg\\ffmpeg-2025-07-10-git-82aeee3c19-essentials_build\\bin\\ffmpeg.exe',
-    'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
-    'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
-  ];
-  
-  for (const testPath of commonPaths) {
-    try {
-      console.log('Testing FFmpeg path:', testPath);
-      execSync(`"${testPath}" -version`, { stdio: 'ignore', timeout: 5000 });
-      console.log('FFmpeg found at:', testPath);
-      return testPath;
-    } catch (e) {
-      console.log('FFmpeg not found at:', testPath);
-      continue;
+}
+
+async function findFFmpegPath(): Promise<string> {
+  for (const candidate of FFMPEG_CANDIDATES) {
+    const expanded = candidate.replace('%USERNAME%', process.env.USERNAME || '');
+    // 'ffmpeg' z PATH se nesmí obalit uvozovkami, cesty naopak musí.
+    const command = expanded === 'ffmpeg' ? 'ffmpeg' : `"${expanded}"`;
+    if (await probe(command)) {
+      console.log('FFmpeg found at:', expanded);
+      return expanded;
     }
   }
-  
-  // As a last resort, try to find a working FFmpeg from common download locations
-  const downloadPaths = [
-    'C:\\Users\\%USERNAME%\\Downloads\\ffmpeg\\bin\\ffmpeg.exe',
-    'C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe',
-    'C:\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe',
-  ];
-  
-  for (const testPath of downloadPaths) {
-    try {
-      const expandedPath = testPath.replace('%USERNAME%', process.env.USERNAME || '');
-      console.log('Testing download path:', expandedPath);
-      execSync(`"${expandedPath}" -version`, { stdio: 'ignore', timeout: 5000 });
-      console.log('FFmpeg found at:', expandedPath);
-      return expandedPath;
-    } catch (e) {
-      continue;
-    }
+  throw new Error(FFMPEG_NOT_FOUND);
+}
+
+function getFFmpegPath(): Promise<string> {
+  if (!ffmpegPathPromise) {
+    ffmpegPathPromise = findFFmpegPath();
   }
-  
-  throw new Error('FFmpeg not found. Please install FFmpeg:\\n' +
-    '1. Download from https://ffmpeg.org/download.html\\n' +
-    '2. Extract to C:\\\\ffmpeg\\\\ or add to PATH\\n' +
-    '3. Or try: winget install Gyan.FFmpeg');
+  return ffmpegPathPromise;
 }
 
 interface StreamInstance {
@@ -87,8 +91,8 @@ async function detectAvailableCodecs(): Promise<{
   hasAmdAmf: boolean;
   supportedCodecs: string[];
 }> {
-  const ffmpegPath = getFFmpegPath();
-  
+  const ffmpegPath = await getFFmpegPath();
+
   try {
     const { stdout } = await execAsync(`"${ffmpegPath}" -encoders`);
     
@@ -216,9 +220,11 @@ async function testRTSPConnection(rtspUrl: string, timeoutMs: number = 10000): P
   error?: string;
   details?: string;
 }> {
+  // Cesta se musí vyřešit před vytvořením Promise — uvnitř executoru
+  // nelze použít `await`.
+  const ffmpegPath = await getFFmpegPath();
+
   return new Promise((resolve) => {
-    const ffmpegPath = getFFmpegPath();
-    
     // Use FFprobe to test RTSP connection
     const testProcess = spawn(ffmpegPath, [
       '-rtsp_transport', 'tcp',
@@ -298,7 +304,7 @@ export class RTSPStreamServer {
 
     // Check FFmpeg
     try {
-      const ffmpegPath = getFFmpegPath();
+      const ffmpegPath = await getFFmpegPath();
       const { stdout } = await execAsync(`"${ffmpegPath}" -version`);
       diagnostics.ffmpegAvailable = true;
       diagnostics.ffmpegVersion = stdout.split('\n')[0];
@@ -433,7 +439,7 @@ export class RTSPStreamServer {
     console.log(`Starting FFmpeg for stream ${streamId} with URL: ${redactRtspUrl(rtspUrl)}`);
     console.log(`FFmpeg args:`, ffmpegArgs.map((a) => (a === rtspUrl ? redactRtspUrl(a) : a)));
 
-    const ffmpegPath = getFFmpegPath();
+    const ffmpegPath = await getFFmpegPath();
     console.log(`Using FFmpeg path: ${ffmpegPath}`);
     
     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);

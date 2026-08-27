@@ -1,5 +1,5 @@
 import { ENV } from "../config/env";
-import { http } from "./http";
+import { buildQuery, http, Paged, toPaged } from "./http";
 import {
   AccessCheckResult,
   CreateLicensePlateDto,
@@ -8,27 +8,66 @@ import {
 
 const LP = ENV.API.ENDPOINTS.LICENSE_PLATES;
 
+async function fetchList(
+  path: string,
+  page?: number,
+  limit?: number,
+  signal?: AbortSignal,
+): Promise<Paged<LicensePlate>> {
+  const data = await http.get<LicensePlate[] | Paged<LicensePlate>>(
+    `${LP}/${path}${buildQuery({ page, limit })}`,
+    signal,
+  );
+  return toPaged(data);
+}
+
 export const licensePlateService = {
-  /** Whitelist = platné/neblokované SPZ. */
-  async getWhitelist(): Promise<LicensePlate[]> {
-    const data = await http.get<LicensePlate[]>(`${LP}/whitelist`);
-    return Array.isArray(data) ? data : [];
+  /** Ruční povolení (zaměstnanci, dodavatelé) — NE vozidla hostů. */
+  async getAllowRules(): Promise<LicensePlate[]> {
+    return (await fetchList("allow-rules")).items;
   },
 
-  /** Blacklist = zablokované SPZ. */
+  /** Blacklist = zablokované SPZ (celý seznam). */
   async getBlacklist(): Promise<LicensePlate[]> {
-    const data = await http.get<LicensePlate[]>(`${LP}/blacklist`);
-    return Array.isArray(data) ? data : [];
+    return (await fetchList("blacklist")).items;
   },
 
-  /** Ověření vjezdu podle SPZ (allow/deny + důvod). */
-  async check(text: string): Promise<AccessCheckResult> {
-    return http.get<AccessCheckResult>(`${LP}/check/${encodeURIComponent(text)}`);
+  /** Jedna stránka ručních povolení. */
+  getAllowRulesPage(
+    page: number,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<Paged<LicensePlate>> {
+    return fetchList("allow-rules", page, limit, signal);
+  },
+
+  /** Jedna stránka blacklistu. */
+  getBlacklistPage(
+    page: number,
+    limit: number,
+    signal?: AbortSignal,
+  ): Promise<Paged<LicensePlate>> {
+    return fetchList("blacklist", page, limit, signal);
   },
 
   /**
-   * Ruční přidání SPZ. Text jde v cestě (kontrakt `POST /:text`), tělo nese
-   * platnost (from/to), volitelnou vazbu na rezervaci a blacklist flag.
+   * Ověření vjezdu podle SPZ (allow/deny + důvod).
+   *
+   * Bez `direction` se ptáme na VJEZD — výjezd se pouští vždy, takže na něj
+   * se obsluha ptát nepotřebuje.
+   */
+  async check(
+    text: string,
+    direction: "entry" | "exit" = "entry",
+  ): Promise<AccessCheckResult> {
+    return http.get<AccessCheckResult>(
+      `${LP}/check/${encodeURIComponent(text)}${buildQuery({ direction })}`,
+    );
+  },
+
+  /**
+   * Ruční pravidlo pro SPZ. Text jde v cestě (kontrakt `POST /:text`), tělo
+   * nese druh pravidla (`allow`/`blacklist`), platnost a důvod.
    */
   async create(
     text: string,

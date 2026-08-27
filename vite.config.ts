@@ -51,7 +51,17 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
-      external: ['electron']
+      external: ['electron'],
+      output: {
+        // Bez tohohle šel celý renderer do jednoho ~1 MB chunku. Rozdělením
+        // se knihovny, které se na pokladně nepoužijí, načtou až s příslušnou
+        // obrazovkou a při aktualizaci se nepřenášejí znovu.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+          realtime: ['socket.io-client']
+        }
+      }
     }
   }
 })

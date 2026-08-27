@@ -1,275 +1,140 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Order } from '../types/order';
-import { Product } from '../types/product';
-import { orderService, OrderFilterParams } from '../services/orderService';
-import { productService } from '../services/productService';
+import { useCallback, useState } from 'react';
+import Pagination from '../components/Pagination';
+import { useDebounced } from '../hooks/useDebounced';
+import { usePagedList } from '../hooks/usePagedList';
+import { orderService } from '../services/orderService';
 import { printerService } from '../services/printerService';
+import { Order, OrderItem } from '../types/order';
 
 // Date filter options
 type DateFilter = 'day' | 'month' | 'year' | 'custom';
 
+const currencyFormat = new Intl.NumberFormat('cs-CZ', {
+    style: 'currency',
+    currency: 'CZK',
+});
+
+const dateFormat = new Intl.DateTimeFormat('cs-CZ', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+});
+
+const formatCurrency = (amount: number) => currencyFormat.format(amount);
+const formatDate = (value: string | Date) => dateFormat.format(new Date(value));
+
 export default function Sales() {
-    const [orders, setOrders] = useState<Order[]>([]);
-    const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
-    const [products, setProducts] = useState<Record<string, Product>>({});
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [dateFilter, setDateFilter] = useState<DateFilter>('month');
-    const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    // Lazy init — rozsah se spočítá jednou při mountu, ne při každém renderu.
+    const [startDate, setStartDate] = useState(
+        () => orderService.getDateRangeForFilter('month').startDate,
+    );
+    const [endDate, setEndDate] = useState(
+        () => orderService.getDateRangeForFilter('month').endDate,
+    );
+    const [searchId, setSearchId] = useState('');
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-    const [searchId, setSearchId] = useState('');
     const [isPrinting, setIsPrinting] = useState<string | null>(null);
 
-    // Fetch orders and products on component mount
-    useEffect(() => {
-        fetchProductsAndOrders();
+    const debouncedSearch = useDebounced(searchId);
+
+    // Jediný zdroj načítání pro celou obrazovku: změna stránky, období nebo
+    // hledání = právě jeden dotaz. Filtrování i řazení řeší server.
+    const {
+        items: orders,
+        total,
+        page,
+        limit,
+        loading,
+        error,
+        setPage,
+        setLimit,
+        reload,
+    } = usePagedList<Order>({
+        fetchPage: (currentPage, currentLimit, signal) =>
+            orderService.getOrdersPage(
+                {
+                    page: currentPage,
+                    limit: currentLimit,
+                    startDate,
+                    endDate,
+                    search: debouncedSearch,
+                },
+                signal,
+            ),
+        filterKey: [startDate, endDate, debouncedSearch],
+    });
+
+    /** Předvolba období přepíše i datumová pole, ať UI zůstane konzistentní. */
+    const applyDateFilter = useCallback((next: DateFilter) => {
+        setDateFilter(next);
+        if (next === 'custom') return;
+        const range = orderService.getDateRangeForFilter(next);
+        setStartDate(range.startDate);
+        setEndDate(range.endDate);
     }, []);
 
-    // Fetch all products and store them by ID for quick lookup
-    const fetchProducts = async () => {
-        try {
-            const productsData = await productService.getProducts();
-            const productsMap: Record<string, Product> = {};
-            productsData.forEach(product => {
-                if (product._id) {
-                    productsMap[product._id] = product;
-                }
-            });
-            setProducts(productsMap);
-            return productsMap;
-        } catch (err) {
-            console.error("Failed to load products:", err);
-            setError("Failed to load product information.");
-            return {};
-        }
-    };
-
-    // Combined function to fetch products and orders
-    const fetchProductsAndOrders = async () => {
-        try {
-            setLoading(true);
-            const productsMap = await fetchProducts();
-            const data = await orderService.getOrders();
-
-            const processedOrders = data.map(order => {
-                const processedItems = order.items?.map(item => {
-                    const productId = typeof item.product === 'string' ? item.product : item.product?._id;
-                    const product = productId ? productsMap[productId] || item.product : item.product;
-
-                    return {
-                        ...item,
-                        product
-                    };
-                }) || [];
-
-                const totalPrice = processedItems.reduce((sum, item) => {
-                    const price = typeof item.product === 'object' ? item.product?.price || 0 : 0;
-                    return sum + (price * (item.quantity || 0));
-                }, 0);
-
-                return {
-                    ...order,
-                    items: processedItems,
-                    totalPrice: totalPrice
-                };
-            });
-
-            setOrders(processedOrders);
-            setError(null);
-
-            if (dateFilter === 'custom') {
-                filterOrders({ startDate, endDate }, processedOrders, productsMap);
-            } else {
-                const filterParams = orderService.getDateRangeForFilter(dateFilter);
-                setStartDate(filterParams.startDate);
-                setEndDate(filterParams.endDate);
-                filterOrders(filterParams, processedOrders, productsMap);
-            }
-        } catch (err) {
-            setError("Failed to load orders. Please try again later.");
-            console.error(err);
-            setOrders([]);
-            setFilteredOrders([]);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Filter orders when necessary
-    const filterOrders = useCallback(async (
-        filterParams: OrderFilterParams,
-        ordersList = orders,
-        productsMap = products
-    ) => {
-        try {
-            if (ordersList.length === 0) return;
-
-            const filtered = await orderService.getFilteredOrders(filterParams);
-
-            const processedFiltered = filtered.map(order => {
-                const processedItems = order.items?.map(item => {
-                    const productId = typeof item.product === 'string' ? item.product : item.product?._id;
-                    const product = productId ? productsMap[productId] || item.product : item.product;
-
-                    return {
-                        ...item,
-                        product
-                    };
-                }) || [];
-
-                const totalPrice = processedItems.reduce((sum, item) => {
-                    const price = typeof item.product === 'object' ? item.product?.price || 0 : 0;
-                    return sum + (price * (item.quantity || 0));
-                }, 0);
-
-                return {
-                    ...order,
-                    items: processedItems,
-                    totalPrice: totalPrice
-                };
-            });
-
-            setFilteredOrders(processedFiltered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-        } catch (err) {
-            console.error("Failed to filter orders:", err);
-            setFilteredOrders([]);
-        }
-    }, [orders, products]);
-
-    // Apply date filter when filter changes
-    useEffect(() => {
-        if (!orders.length) return;
-
-        let filterParams: OrderFilterParams;
-
-        if (dateFilter === 'custom') {
-            filterParams = { startDate, endDate };
-        } else {
-            filterParams = orderService.getDateRangeForFilter(dateFilter);
-            setStartDate(filterParams.startDate);
-            setEndDate(filterParams.endDate);
-        }
-
-        filterOrders(filterParams);
-    }, [dateFilter, startDate, endDate, orders, filterOrders]);
-
-    // Add this new search function
-    const handleSearch = useCallback(() => {
-        if (!searchId.trim()) {
-            // If search is cleared, revert to date filter
-            if (dateFilter === 'custom') {
-                filterOrders({ startDate, endDate });
-            } else {
-                const filterParams = orderService.getDateRangeForFilter(dateFilter);
-                filterOrders(filterParams);
-            }
-            return;
-        }
-
-        // Filter orders by ID (partial match)
-        const results = orders.filter(order =>
-            order._id.toLowerCase().includes(searchId.toLowerCase())
-        );
-        setFilteredOrders(results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    }, [searchId, orders, dateFilter, startDate, endDate, filterOrders]);
-
-    // Add effect for search
-    useEffect(() => {
-        if (searchId.trim()) {
-            handleSearch();
-        }
-    }, [searchId, handleSearch]);
-
-    // Format currency
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('cs-CZ', {
-            style: 'currency',
-            currency: 'CZK'
-        }).format(amount);
-    };
-
-    // Format date for display
-    const formatDate = (dateString: string | Date) => {
-        const date = new Date(dateString);
-        return new Intl.DateTimeFormat('cs-CZ', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        }).format(date);
-    };
-
-    // Handle order deletion
     const handleDeleteOrder = async (id: string) => {
         try {
             await orderService.deleteOrder(id);
-            setOrders(orders.filter(order => order._id !== id));
-            setFilteredOrders(filteredOrders.filter(order => order._id !== id));
             setIsDeleteModalOpen(false);
             setSelectedOrder(null);
-        } catch (error) {
-            console.error('Failed to delete order:', error);
+            // Znovunačtení stránky místo mazání z pole — jinak by na stránce
+            // chyběl řádek, který se má posunout z té následující.
+            reload();
+        } catch (err) {
+            console.error('Failed to delete order:', err);
         }
     };
 
-    // Handle receipt printing for existing order
     const handlePrintReceipt = async (order: Order) => {
         try {
             setIsPrinting(order._id);
-            
-            // Prepare receipt data
-            const receiptData = {
+            const printResult = await printerService.printReceipt({
                 orderNumber: order._id,
                 date: formatDate(order.createdAt),
-                items: order.items?.map(item => ({
-                    name: getProductName(item),
-                    quantity: item.quantity || 0,
-                    price: getProductPrice(item),
-                    total: getProductPrice(item) * (item.quantity || 0)
-                })) || [],
-                totalAmount: order.totalPrice || 0,
+                items: order.items.map((item) => ({
+                    name: item.name,
+                    quantity: item.quantity,
+                    price: item.unitPrice,
+                    total: item.unitPrice * item.quantity,
+                })),
+                totalAmount: order.totalPrice,
                 storeName: 'Hradišťský Vrch',
-                storeAddress: 'Vaše adresa zde'
-            };
+                storeAddress: 'Vaše adresa zde',
+            });
 
-            // Print receipt
-            const printResult = await printerService.printReceipt(receiptData);
-            
             if (!printResult.success) {
                 console.warn('Tisk účtenky selhal:', printResult.error);
             }
-        } catch (error) {
-            console.error('Failed to print receipt:', error);
+        } catch (err) {
+            console.error('Failed to print receipt:', err);
         } finally {
             setIsPrinting(null);
         }
     };
 
-    // Open view modal with order details
     const handleViewOrder = (order: Order) => {
         setSelectedOrder(order);
         setIsViewModalOpen(true);
     };
 
-    // Helper to get product name safely
-    const getProductName = (item: any) => {
-        if (typeof item.product === 'object' && item.product) {
-            return item.product.name || 'Neznámý produkt';
-        }
-        return 'Neznámý produkt';
-    };
-
-    // Helper to get product price safely
-    const getProductPrice = (item: any) => {
-        if (typeof item.product === 'object' && item.product) {
-            return item.product.price || 0;
-        }
-        return 0;
-    };
+    const filterButton = (value: DateFilter, label: string) => (
+        <button
+            onClick={() => applyDateFilter(value)}
+            className={`px-3 py-1 rounded-md text-sm transition-colors ${
+                dateFilter === value
+                    ? 'bg-link text-primary'
+                    : 'bg-secondary text-text-secondary hover:bg-primary'
+            }`}
+        >
+            {label}
+        </button>
+    );
 
     return (
         <div className="flex w-full h-screen">
@@ -280,46 +145,10 @@ export default function Sales() {
 
                     <div className="flex flex-wrap gap-2 items-center">
                         <div className="flex space-x-1">
-                            <button
-                                onClick={() => setDateFilter('day')}
-                                className={`px-3 py-1 rounded-md text-sm transition-colors ${
-                                    dateFilter === 'day'
-                                        ? 'bg-link text-text-primary'
-                                        : 'bg-secondary text-text-secondary hover:bg-primary'
-                                }`}
-                            >
-                                Dnes
-                            </button>
-                            <button
-                                onClick={() => setDateFilter('month')}
-                                className={`px-3 py-1 rounded-md text-sm transition-colors ${
-                                    dateFilter === 'month'
-                                        ? 'bg-link text-primary'
-                                        : 'bg-secondary text-text-secondary hover:bg-primary'
-                                }`}
-                            >
-                                Měsíc
-                            </button>
-                            <button
-                                onClick={() => setDateFilter('year')}
-                                className={`px-3 py-1 rounded-md text-sm transition-colors ${
-                                    dateFilter === 'year'
-                                        ? 'bg-link text--primary'
-                                        : 'bg-secondary text-text-secondary hover:bg-primary'
-                                }`}
-                            >
-                                Rok
-                            </button>
-                            <button
-                                onClick={() => setDateFilter('custom')}
-                                className={`px-3 py-1 rounded-md text-sm transition-colors ${
-                                    dateFilter === 'custom'
-                                        ? 'bg-link text-primary'
-                                        : 'bg-secondary text-text-secondary hover:bg-primary'
-                                }`}
-                            >
-                                Vlastní
-                            </button>
+                            {filterButton('day', 'Dnes')}
+                            {filterButton('month', 'Měsíc')}
+                            {filterButton('year', 'Rok')}
+                            {filterButton('custom', 'Vlastní')}
                         </div>
 
                         {dateFilter === 'custom' && (
@@ -357,6 +186,13 @@ export default function Sales() {
                         </div>
                     </div>
                 </div>
+
+                {searchId.trim() && (
+                    <div className="px-4 pt-3 text-xs text-text-secondary">
+                        Hledání probíhá napříč celou historií — zvolené období se ignoruje.
+                    </div>
+                )}
+
                 {/* Orders table */}
                 <div className="flex-1 overflow-auto p-4">
                     {loading ? (
@@ -367,9 +203,11 @@ export default function Sales() {
                         <div className="bg-primary border border-error text-error px-4 py-3 rounded mb-4">
                             {error}
                         </div>
-                    ) : filteredOrders.length === 0 ? (
+                    ) : orders.length === 0 ? (
                         <div className="bg-primary border border-text-secondary/20 text-text-secondary px-4 py-8 rounded text-center">
-                            Žádné objednávky pro vybrané období
+                            {searchId.trim()
+                                ? 'Žádná účtenka s tímto ID'
+                                : 'Žádné objednávky pro vybrané období'}
                         </div>
                     ) : (
                         <div className="bg-primary rounded-md overflow-hidden">
@@ -384,7 +222,7 @@ export default function Sales() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredOrders.map((order) => (
+                                    {orders.map((order) => (
                                         <tr key={order._id} className="border-b border-secondary/30 hover:bg-secondary/20">
                                             <td className="px-4 py-3 font-mono text-xs">
                                                 ...{order._id.slice(12)}
@@ -394,12 +232,12 @@ export default function Sales() {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="max-w-xs">
-                                                    {order.items?.slice(0, 2).map((item, index) => (
+                                                    {order.items.slice(0, 2).map((item, index) => (
                                                         <div key={index} className="text-xs">
-                                                            {item.quantity}x {getProductName(item)}
+                                                            {item.quantity}x {item.name}
                                                         </div>
                                                     ))}
-                                                    {order.items && order.items.length > 2 && (
+                                                    {order.items.length > 2 && (
                                                         <div className="text-xs text-text-secondary">
                                                             +{order.items.length - 2} dalších...
                                                         </div>
@@ -407,7 +245,7 @@ export default function Sales() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-right font-medium">
-                                                {formatCurrency(order.totalPrice || 0)}
+                                                {formatCurrency(order.totalPrice)}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex justify-center space-x-2">
@@ -460,6 +298,17 @@ export default function Sales() {
                         </div>
                     )}
                 </div>
+
+                {!error && (
+                    <Pagination
+                        page={page}
+                        limit={limit}
+                        total={total}
+                        loading={loading}
+                        onPageChange={setPage}
+                        onLimitChange={setLimit}
+                    />
+                )}
             </div>
 
             {/* Delete Confirmation Modal */}
@@ -514,16 +363,16 @@ export default function Sales() {
                             <div className="bg-secondary rounded-md overflow-hidden">
                                 <table className="w-full text-sm">
                                     <tbody>
-                                        {selectedOrder.items?.map((item, index) => (
+                                        {selectedOrder.items.map((item: OrderItem, index: number) => (
                                             <tr key={index} className="border-b border-primary last:border-0">
                                                 <td className="px-3 py-2 text-text-primary">
-                                                    {getProductName(item)}
+                                                    {item.name}
                                                 </td>
                                                 <td className="px-3 py-2 text-text-secondary text-right">
                                                     {item.quantity}x
                                                 </td>
                                                 <td className="px-3 py-2 text-text-primary text-right">
-                                                    {formatCurrency(getProductPrice(item) * (item.quantity || 0))}
+                                                    {formatCurrency(item.unitPrice * item.quantity)}
                                                 </td>
                                             </tr>
                                         ))}
@@ -532,7 +381,7 @@ export default function Sales() {
                                                 Celkem
                                             </td>
                                             <td className="px-3 py-2 font-bold text-text-primary text-right">
-                                                {formatCurrency(selectedOrder.totalPrice || 0)}
+                                                {formatCurrency(selectedOrder.totalPrice)}
                                             </td>
                                         </tr>
                                     </tbody>
