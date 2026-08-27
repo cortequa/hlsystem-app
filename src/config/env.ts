@@ -37,6 +37,9 @@ export const ENV = {
       // Auta čekající u brány — fronta pro recepci.
       PENDING_ARRIVALS: `${API}/pending-arrivals`,
       PRESENCE: `${API}/presence`,
+      // Čipový systém sprch.
+      SHOWER_CHIPS: `${API}/shower-chips`,
+      SHOWER_DEVICES: `${API}/shower-devices`,
     },
   },
 };

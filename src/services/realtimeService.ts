@@ -17,6 +17,8 @@ export const RealtimeEvents = {
   /** Auto čeká u brány — kvůli téhle události o něm recepce vůbec ví. */
   pendingArrival: "pendingArrival",
   pendingArrivalResolved: "pendingArrivalResolved",
+  /** Přiložení čipu u sprch — recepce živě vidí i to, že hostovi došel kredit. */
+  showerEvent: "showerEvent",
   licensePlateUploaded: "licensePlateUploaded",
 } as const;
 

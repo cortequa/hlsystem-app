@@ -45,6 +45,15 @@ export default function Navigation() {
             ),
         },
         {
+            path: "/showers",
+            icon: (
+                // Kapka — čipový systém sprch
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 2a.75.75 0 01.624.334C11.63 3.83 15 9.036 15 12a5 5 0 01-10 0c0-2.964 3.37-8.17 4.376-9.666A.75.75 0 0110 2zm0 3.09C8.87 6.93 6.5 10.9 6.5 12a3.5 3.5 0 107 0c0-1.1-2.37-5.07-3.5-6.91z" clipRule="evenodd" />
+                </svg>
+            ),
+        },
+        {
             path: "/sales",
             icon: (
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">

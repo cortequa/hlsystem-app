@@ -12,6 +12,7 @@ const Metrics = lazy(() => import("./pages/Metrics"));
 const TaxReduction = lazy(() => import("./pages/TaxReduction"));
 const Reservations = lazy(() => import("./pages/Reservations"));
 const LicensePlates = lazy(() => import("./pages/LicensePlates"));
+const Showers = lazy(() => import("./pages/Showers"));
 
 import Navigation from "./components/Navigation";
 import UpdateManager from "./components/UpdateManager";
@@ -34,6 +35,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/reservations" element={<Reservations />} />
             <Route path="/plates" element={<LicensePlates />} />
+            <Route path="/showers" element={<Showers />} />
             <Route path="/sales" element={<Sales />} />
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/tax-reduction" element={<TaxReduction />} />
