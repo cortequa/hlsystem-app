@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Pagination from "../components/Pagination";
 import ReservationModal from "../components/ReservationModal";
+import StayOrderModal from "../components/StayOrderModal";
 import { useDebounced } from "../hooks/useDebounced";
 import { usePagedList } from "../hooks/usePagedList";
 import { stayService } from "../services/stayService";
@@ -30,6 +31,7 @@ export default function Reservations() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>("all");
   const [plateSearch, setPlateSearch] = useState("");
+  const [chargeStay, setChargeStay] = useState<Stay | null>(null);
   const [modal, setModal] = useState<{ open: boolean; stay: Stay | null }>({
     open: false,
     stay: null,
@@ -197,6 +199,14 @@ export default function Reservations() {
                     Check-out
                   </button>
                 )}
+                {stay.status !== "cancelled" && (
+                  <button
+                    onClick={() => setChargeStay(stay)}
+                    className="bg-secondary text-text-primary px-3 py-1.5 rounded-lg text-sm"
+                  >
+                    Účtovat
+                  </button>
+                )}
                 <button onClick={() => setModal({ open: true, stay })} className="bg-link text-white px-3 py-1.5 rounded-lg text-sm">
                   Upravit
                 </button>
@@ -222,6 +232,14 @@ export default function Reservations() {
           loading={loading}
           onPageChange={setPage}
           onLimitChange={setLimit}
+        />
+      )}
+
+      {chargeStay && (
+        <StayOrderModal
+          stay={chargeStay}
+          guestName={visitorFullName(visitorMap.get(chargeStay.visitorId))}
+          onClose={() => setChargeStay(null)}
         />
       )}
 

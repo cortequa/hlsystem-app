@@ -49,6 +49,17 @@ export const stayService = {
     return http.patch<Stay>(`${STAYS}/${id}`, dto);
   },
 
+  /** Doúčtování k pobytu — vznikne účtenka se `stayId` (dřevo, doplatky). */
+  async addOrder(
+    id: string,
+    payload: {
+      products: Array<{ productId: string; quantity: number; duration?: number }>;
+      date?: string;
+    },
+  ): Promise<{ orderId: string }> {
+    return http.post<{ orderId: string }>(`${STAYS}/${id}/orders`, payload);
+  },
+
   /** Doplnění SPZ hostovi, který ji při rezervaci neuvedl. */
   async addVehicle(id: string, plate: string, note?: string): Promise<Stay> {
     return http.post<Stay>(`${STAYS}/${id}/vehicles`, { plate, note });

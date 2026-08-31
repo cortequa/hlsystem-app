@@ -126,6 +126,22 @@ export const orderService = {
         return toPaged(data).items.map(normalizeOrder);
     },
 
+    /**
+     * Účtenky patřící jednomu pobytu (doúčtování k rezervaci). Nestránkované —
+     * účtenek na jeden pobyt je pár, ne tisíce.
+     */
+    async getOrdersForStay(
+        stayId: string,
+        signal?: AbortSignal,
+    ): Promise<Order[]> {
+        const query = buildQuery({ stayId });
+        const data = await http.get<Order[] | Paged<Order>>(
+            `${ORDERS}${query}`,
+            signal,
+        );
+        return toPaged(data).items.map(normalizeOrder);
+    },
+
     /** Agregované tržby — počítá je databáze, ne prohlížeč. */
     async getStats(
         range: OrderFilterParams,
