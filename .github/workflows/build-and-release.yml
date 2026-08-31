@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
         
     steps:
       - name: Checkout code
@@ -63,6 +63,7 @@ jobs:
           files: |
             ./artifacts/build-windows-latest/**/*
             ./artifacts/build-macos-latest/**/*
+            ./artifacts/build-ubuntu-latest/**/*
           draft: false
           prerelease: false
           generate_release_notes: true
