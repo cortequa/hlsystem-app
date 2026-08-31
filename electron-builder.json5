@@ -21,7 +21,7 @@
     "target": [
       "dmg"
     ],
-    "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
+    "artifactName": "hlsystem-app-mac.${ext}"
   },
   "win": {
     "target": [
@@ -32,7 +32,7 @@
         ]
       }
     ],
-    "artifactName": "hlsystem-app-setup-${version}.${ext}",
+    "artifactName": "hlsystem-app-win.${ext}",
     "verifyUpdateCodeSignature": false,
     "publisherName": "HLSystem"
   },
@@ -49,6 +49,6 @@
     "target": [
       "AppImage"
     ],
-    "artifactName": "${productName}-Linux-${version}.${ext}"
+    "artifactName": "hlsystem-app-linux.${ext}"
   }
 }

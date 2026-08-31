@@ -15,7 +15,7 @@
     "target": [
       "dmg"
     ],
-    "artifactName": "${productName}-Mac-${version}-Dev.${ext}"
+    "artifactName": "hlsystem-app-mac-dev.${ext}"
   },
   "win": {
     "target": [
@@ -26,7 +26,7 @@
         ]
       }
     ],
-    "artifactName": "${productName}-Windows-${version}-Dev.${ext}",
+    "artifactName": "hlsystem-app-win-dev.${ext}",
     "sign": null,
     "publisherName": "HLSystem Dev"
   },
@@ -43,6 +43,6 @@
     "target": [
       "AppImage"
     ],
-    "artifactName": "${productName}-Linux-${version}-Dev.${ext}"
+    "artifactName": "hlsystem-app-linux-dev.${ext}"
   }
 }
