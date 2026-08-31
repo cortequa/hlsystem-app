@@ -7,7 +7,10 @@ import Home from "./pages/Home";
 // Ostatní obrazovky se stahují až při prvním otevření. Hlavní důvod je
 // Metrics: statický import tahal `recharts` (+ balík d3) do jednoho chunku,
 // který se pak parsoval i na pokladně, kde se graf nikdy nezobrazí.
-const Sales = lazy(() => import("./pages/Sales"));
+// Sales (Prodeje) je dočasně deaktivovaná — viz Navigation.tsx. Import
+// zůstává zakomentovaný, ne smazaný, ať se dá znovu zapnout jen odkomentováním
+// tady a v Navigation.tsx.
+// const Sales = lazy(() => import("./pages/Sales"));
 const Metrics = lazy(() => import("./pages/Metrics"));
 const TaxReduction = lazy(() => import("./pages/TaxReduction"));
 const Reservations = lazy(() => import("./pages/Reservations"));
@@ -36,7 +39,7 @@ function App() {
             <Route path="/reservations" element={<Reservations />} />
             <Route path="/plates" element={<LicensePlates />} />
             <Route path="/showers" element={<Showers />} />
-            <Route path="/sales" element={<Sales />} />
+            {/* <Route path="/sales" element={<Sales />} /> deaktivováno, viz komentář nahoře */}
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/tax-reduction" element={<TaxReduction />} />
           </Routes>
