@@ -31,6 +31,8 @@ let win: BrowserWindow | null
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false; // Changed to false for manual control
 
+let updateDownloadStarted = false;
+
 // BEZPEČNOST (prod-check): ověřování podpisu a TLS aktualizací se smí vypnout
 // VÝHRADNĚ v dev buildu. V zabaleném (produkčním) buildu MUSÍ zůstat zapnuté —
 // jinak by šlo na POS terminály podstrčit neověřený update (RCE). Produkční
@@ -70,11 +72,18 @@ autoUpdater.on('checking-for-update', () => {
 autoUpdater.on('update-available', (info) => {
   console.log('Update available:', info)
   win?.webContents.send('update-available', info)
-  // Automatically start download
-  autoUpdater.downloadUpdate()
+  // autoDownload is disabled so the UI can show download progress explicitly.
+  if (!updateDownloadStarted) {
+    updateDownloadStarted = true
+    autoUpdater.downloadUpdate().catch((error) => {
+      updateDownloadStarted = false
+      autoUpdater.emit('error', error instanceof Error ? error : new Error(String(error)))
+    })
+  }
 })
 
 autoUpdater.on('update-not-available', (info) => {
+  updateDownloadStarted = false
   console.log('Update not available:', info)
   win?.webContents.send('update-not-available', info)
 })
@@ -184,8 +193,13 @@ function createWindow() {
   })
 
   if (VITE_DEV_SERVER_URL) {
-    console.log('Loading dev server URL:', VITE_DEV_SERVER_URL)
-    win.loadURL(VITE_DEV_SERVER_URL)
+    // vite-plugin-electron mapuje adresu serveru natvrdo zpátky na "localhost"
+    // (resolveHostname), i když Vite posloucháme na 127.0.0.1. Přepisujeme ji,
+    // aby dev server nespadl pod HSTS pin, který si Chromium drží pro
+    // "localhost" kvůli HTTPS API na témže hostname → ERR_SSL_PROTOCOL_ERROR.
+    const devUrl = VITE_DEV_SERVER_URL.replace('//localhost:', '//127.0.0.1:')
+    console.log('Loading dev server URL:', devUrl)
+    win.loadURL(devUrl)
   } else {
     console.log('Loading production build')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
@@ -290,6 +304,9 @@ app.whenReady().then(() => {
 
   // Auto-updater IPC handlers
   ipcMain.handle('check-for-updates', async () => {
+    if (!app.isPackaged) {
+      return { success: false, error: 'Aktualizace jsou dostupné pouze v nainstalované aplikaci.' };
+    }
     try {
       console.log('IPC: check-for-updates called');
       win?.webContents.send('checking-for-update')

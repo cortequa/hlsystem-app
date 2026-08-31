@@ -3,7 +3,7 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.hlsystem.app.dev",
   "asar": true,
-  "productName": "pokladní aplikace - Hradišstký Vrch (DEV)",
+  "productName": "HLSystem (DEV)",
   "directories": {
     "output": "release/${version}"
   },

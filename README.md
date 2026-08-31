@@ -61,8 +61,8 @@ V `electron-builder.json5` změňte:
 {
   "publish": {
     "provider": "github",
-    "owner": "your-github-username",  // ← Změňte na váš GitHub username
-    "repo": "hlsystem-app"            // ← Změňte na název vašeho repo
+    "owner": "cortequa",
+    "repo": "hlsystem-app"
   }
 }
 ```
@@ -70,10 +70,10 @@ V `electron-builder.json5` změňte:
 V `package.json` změňte:
 ```json
 {
-  "homepage": "https://github.com/your-github-username/hlsystem-app",
+  "homepage": "https://github.com/cortequa/hlsystem-app",
   "repository": {
     "type": "git", 
-    "url": "https://github.com/your-github-username/hlsystem-app.git"
+    "url": "https://github.com/cortequa/hlsystem-app.git"
   }
 }
 ```

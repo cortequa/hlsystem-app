@@ -71,7 +71,7 @@ Instalační soubory jsou v: `release/1.0.1/`
 ### 3. Vytvořte GitHub Release manuálně
 
 1. **Jděte na váš GitHub repository**:
-   https://github.com/caliaq/hlsystem-app/releases
+   https://github.com/cortequa/hlsystem-app/releases
 
 2. **Klikněte "Create a new release"**
 

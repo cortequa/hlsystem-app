@@ -20,9 +20,6 @@ export default function UpdateManager() {
       return;
     }
 
-    // Check for updates on mount
-    window.electronAPI.checkForUpdates();
-
     // Listen for update available
     if (window.electronAPI.onUpdateAvailable) {
       window.electronAPI.onUpdateAvailable(() => {
@@ -37,12 +34,22 @@ export default function UpdateManager() {
       });
     }
 
+    if (window.electronAPI.onUpdateError) {
+      window.electronAPI.onUpdateError((error: string) => {
+        setUpdateState(prev => ({ ...prev, error }));
+      });
+    }
+
     // Listen for download progress
     if (window.electronAPI.onDownloadProgress) {
-      window.electronAPI.onDownloadProgress((progress: any) => {
+      window.electronAPI.onDownloadProgress((progress: unknown) => {
+        const percent = typeof progress === 'object' && progress !== null &&
+          'percent' in progress && typeof progress.percent === 'number'
+          ? progress.percent
+          : 0;
         setUpdateState(prev => ({
           ...prev,
-          progress: progress.percent || 0,
+          progress: percent,
         }));
       });
     }
@@ -52,7 +59,16 @@ export default function UpdateManager() {
       window.electronAPI?.removeAllListeners('update-available');
       window.electronAPI?.removeAllListeners('update-downloaded');
       window.electronAPI?.removeAllListeners('download-progress');
+      window.electronAPI?.removeAllListeners('update-error');
     };
+  }, []);
+
+  // Register listeners before checking, otherwise a fast updater response can
+  // arrive before the renderer is ready to receive it.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      void window.electronAPI.checkForUpdates();
+    }
   }, []);
 
   const handleInstallUpdate = () => {

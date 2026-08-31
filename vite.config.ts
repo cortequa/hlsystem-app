@@ -14,6 +14,13 @@ const envDir = existsSync(unifiedEnvDir) ? unifiedEnvDir : __dirname
 
 export default defineConfig({
   envDir,
+  server: {
+    // 127.0.0.1, NE "localhost": nginx (dev stack) posílá HSTS a ten platí pro
+    // celý hostname napříč porty. Jakmile Chromium jednou uvidí HTTPS na
+    // "localhost", vynutí HTTPS i pro tenhle dev server (čisté HTTP) →
+    // ERR_SSL_PROTOCOL_ERROR a bílá obrazovka. Viz i přepis URL v electron/main.ts.
+    host: '127.0.0.1',
+  },
   plugins: [
     react(),
     electron([

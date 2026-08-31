@@ -35,7 +35,7 @@ Write-Host "   📄 $($blockMapFile.Name)" -ForegroundColor White
 Write-Host ""
 
 Write-Host "🌐 Next steps:" -ForegroundColor Cyan
-Write-Host "1. Go to: https://github.com/caliaq/hlsystem-app/releases/new" -ForegroundColor White
+Write-Host "1. Go to: https://github.com/cortequa/hlsystem-app/releases/new" -ForegroundColor White
 Write-Host "2. Set tag: $tagName" -ForegroundColor White
 Write-Host "3. Set title: Release $tagName" -ForegroundColor White
 Write-Host "4. Upload these files:" -ForegroundColor White
@@ -56,5 +56,5 @@ if ($openFolder -eq "y" -or $openFolder -eq "Y") {
 # Otevřít GitHub release page
 $openGitHub = Read-Host "Open GitHub releases page? (y/n)"
 if ($openGitHub -eq "y" -or $openGitHub -eq "Y") {
-    Start-Process "https://github.com/caliaq/hlsystem-app/releases/new"
+    Start-Process "https://github.com/cortequa/hlsystem-app/releases/new"
 }

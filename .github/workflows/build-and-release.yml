@@ -6,6 +6,9 @@ on:
       - 'v*.*.*'  # Spustí se pouze při vytvoření tagu verze (např. v1.0.0)
   workflow_dispatch:  # Umožní manuální spuštění
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}

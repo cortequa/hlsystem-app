@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Aplikace pro správu pokladny s automatickými aktualizacemi",
   "author": "caliaq",
-  "homepage": "https://github.com/caliaq/hlsystem-app",
+  "homepage": "https://github.com/cortequa/hlsystem-app",
   "repository": {
     "type": "git",
-    "url": "https://github.com/caliaq/hlsystem-app.git"
+    "url": "https://github.com/cortequa/hlsystem-app.git"
   },
   "scripts": {
     "dev": "vite",

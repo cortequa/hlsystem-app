@@ -34,7 +34,7 @@ Write-Host "  $($blockMapFile.Name)" -ForegroundColor White
 Write-Host ""
 
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "1. Go to: https://github.com/caliaq/hlsystem-app/releases/new" -ForegroundColor White
+Write-Host "1. Go to: https://github.com/cortequa/hlsystem-app/releases/new" -ForegroundColor White
 Write-Host "2. Set tag: $tagName" -ForegroundColor White
 Write-Host "3. Set title: Release $tagName" -ForegroundColor White
 Write-Host "4. Upload the files from: $releaseDir" -ForegroundColor White
