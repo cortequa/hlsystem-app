@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, dialog, session } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { fileURLToPath } from 'node:url'
+import { isIP } from 'node:net'
 import path from 'node:path'
 import './printer' // Import printer module
-import { rtspStreamServer } from './rtspServer'
+import { initAutoUpdater } from './updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -27,145 +27,12 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 
-// Auto-updater configuration
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = false; // Changed to false for manual control
-
-let updateDownloadStarted = false;
-
-// BEZPEČNOST (prod-check): ověřování podpisu a TLS aktualizací se smí vypnout
-// VÝHRADNĚ v dev buildu. V zabaleném (produkčním) buildu MUSÍ zůstat zapnuté —
-// jinak by šlo na POS terminály podstrčit neověřený update (RCE). Produkční
-// buildy proto musí být code-signed (viz electron-builder konfigurace).
+// V dev buildu se vypínají bezpečnostní varování Electronu; v zabaleném
+// buildu zůstává všechno v defaultu.
 if (!app.isPackaged) {
   process.env.ELECTRON_IS_DEV = '1';
-  process.env.ELECTRON_UPDATER_DISABLE_SIGNATURE_VALIDATION = 'true';
-  process.env.ELECTRON_UPDATER_ALLOW_UNTRUSTED_CERTS = 'true';
   process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 }
-
-// Development settings
-console.log('Configuring auto-updater...');
-console.log('App version:', app.getVersion());
-console.log('Is packaged:', app.isPackaged);
-console.log('Signature validation disabled:', process.env.ELECTRON_UPDATER_DISABLE_SIGNATURE_VALIDATION);
-
-// Configure updater to accept our self-signed certificate
-if (process.platform === 'win32') {
-  // Set the expected publisher name to match our certificate
-  console.log('Setting up auto-updater for self-signed certificate...');
-  
-  // Override the signature verification to allow our specific certificate
-  const originalCheckForUpdates = autoUpdater.checkForUpdates;
-  autoUpdater.checkForUpdates = function(...args) {
-    console.log('Custom checkForUpdates called');
-    return originalCheckForUpdates.apply(this, args);
-  };
-}
-
-// Auto-updater events
-autoUpdater.on('checking-for-update', () => {
-  console.log('Checking for update...')
-  win?.webContents.send('checking-for-update')
-})
-
-autoUpdater.on('update-available', (info) => {
-  console.log('Update available:', info)
-  win?.webContents.send('update-available', info)
-  // autoDownload is disabled so the UI can show download progress explicitly.
-  if (!updateDownloadStarted) {
-    updateDownloadStarted = true
-    autoUpdater.downloadUpdate().catch((error) => {
-      updateDownloadStarted = false
-      autoUpdater.emit('error', error instanceof Error ? error : new Error(String(error)))
-    })
-  }
-})
-
-autoUpdater.on('update-not-available', (info) => {
-  updateDownloadStarted = false
-  console.log('Update not available:', info)
-  win?.webContents.send('update-not-available', info)
-})
-
-autoUpdater.on('error', (err) => {
-  console.log('Error in auto-updater:', err)
-  
-  // Check if error is related to signature verification
-  if (err.message && (err.message.includes('not signed') || err.message.includes('application owner'))) {
-    console.log('Signature verification error - attempting to bypass for self-signed certificate');
-    console.log('Error details:', JSON.stringify(err, null, 2));
-    
-    // For self-signed certificates, we'll show a more user-friendly message
-    win?.webContents.send('update-error', 'Self-signed certifikát detekován. Pro produkční nasazení doporučujeme komerční certifikát.');
-  } else {
-    win?.webContents.send('update-error', err.message)
-  }
-})
-
-autoUpdater.on('download-progress', (progressObj) => {
-  let log_message = "Download speed: " + progressObj.bytesPerSecond
-  log_message = log_message + ' - Downloaded ' + progressObj.percent + '%'
-  log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')'
-  console.log(log_message)
-  console.log('Progress object:', JSON.stringify(progressObj))
-  win?.webContents.send('download-progress', progressObj)
-})
-
-autoUpdater.on('update-downloaded', (info) => {
-  console.log('Update downloaded:', info)
-  console.log('Sending update-downloaded event to renderer...')
-  win?.webContents.send('update-downloaded', info)
-  
-  console.log('Showing restart dialog...')
-  
-  // Try immediate restart first, then show dialog as backup
-  setTimeout(() => {
-    console.log('Auto-restarting in 3 seconds...')
-    try {
-      console.log('Calling autoUpdater.quitAndInstall()...')
-      autoUpdater.quitAndInstall(true, true) // Force restart immediately
-    } catch (error) {
-      console.error('Error in quitAndInstall:', error)
-      console.log('Falling back to app.quit()...')
-      app.relaunch()
-      app.quit()
-    }
-  }, 3000)
-  
-  // Also show dialog
-  dialog.showMessageBox(win!, {
-    type: 'info',
-    title: 'Aktualizace připravena',
-    message: 'Aktualizace byla stažena. Aplikace se automaticky restartuje za 3 sekundy, nebo klikněte "Restartovat nyní".',
-    buttons: ['Restartovat nyní', 'Později']
-  }).then((result) => {
-    console.log('Dialog result:', result)
-    if (result.response === 0) {
-      console.log('User chose to restart immediately - calling quitAndInstall...')
-      try {
-        autoUpdater.quitAndInstall(true, true)
-      } catch (error) {
-        console.error('Error in quitAndInstall from dialog:', error)
-        app.relaunch()
-        app.quit()
-      }
-    } else {
-      console.log('User chose to restart later')
-    }
-  }).catch((error) => {
-    console.error('Error showing dialog:', error)
-    // If dialog fails, force restart anyway
-    console.log('Dialog failed, forcing restart...')
-    try {
-      autoUpdater.quitAndInstall(true, true)
-    } catch (restartError) {
-      console.error('Error in fallback quitAndInstall:', restartError)
-      app.relaunch()
-      app.quit()
-    }
-  })
-})
 
 function createWindow() {
   win = new BrowserWindow({
@@ -227,8 +94,8 @@ app.on('activate', () => {
 // Content-Security-Policy (prod-check H3). Aplikuje se jen v zabaleném buildu,
 // ať nekoliduje s Vite HMR v devu. Blokuje pluginy (object-src none), embedování
 // (frame-ancestors none) a omezuje zdroje; connect-src povoluje API (http/https)
-// a lokální RTSP relay (ws://127.0.0.1). script/style 'unsafe-inline' kvůli
-// inline JSMpeg loaderu v index.html.
+// a websocket pro realtime. script/style 'unsafe-inline' kvůli inline
+// loaderu v index.html.
 function applyCsp() {
   if (!app.isPackaged) return
   const csp = [
@@ -252,104 +119,32 @@ function applyCsp() {
   })
 }
 
+/**
+ * Výjimka z ověřování TLS jen pro API. API se adresuje vždy IP adresou (Pi na
+ * veřejné IP, v devu 127.0.0.1 se self-signed certem), takže výjimka platí jen
+ * pro IP hosty. Doménová jména (GitHub — stahování aktualizací) se ověřují
+ * normálně: bez podpisu buildů je platný TLS jediná ochrana proti podvržené
+ * aktualizaci.
+ */
+function isApiHost(hostname: string): boolean {
+  return isIP(hostname.replace(/^\[|\]$/g, '')) !== 0
+}
+
 app.whenReady().then(() => {
-  // Ignorovat self-signed / neplatné TLS certifikáty pro všechny požadavky
-  // (API server používá self-signed certifikát)
   app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-    event.preventDefault()
-    callback(true)
+    if (isApiHost(new URL(url).hostname)) {
+      event.preventDefault()
+      callback(true)
+    } else {
+      callback(false)
+    }
   })
   session.defaultSession.setCertificateVerifyProc((request, callback) => {
-    callback(0) // 0 = OK, přijmout certifikát
+    // 0 = přijmout, -3 = použít výsledek standardního ověření Chromia.
+    callback(isApiHost(request.hostname) ? 0 : -3)
   })
 
   applyCsp()
   createWindow()
-
-  // Setup IPC handlers for RTSP streams
-  ipcMain.handle('start-rtsp-stream', async (event, rtspUrl: string, streamId: string) => {
-    try {
-      const port = await rtspStreamServer.startStream(rtspUrl, streamId);
-      return { success: true, port };
-    } catch (error) {
-      console.error('Error starting RTSP stream:', error);
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  });
-
-  ipcMain.handle('stop-rtsp-stream', (event, streamId: string) => {
-    try {
-      rtspStreamServer.stopStream(streamId);
-      return { success: true };
-    } catch (error) {
-      console.error('Error stopping RTSP stream:', error);
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  });
-
-  ipcMain.handle('get-stream-port', (event, streamId: string) => {
-    const port = rtspStreamServer.getStreamPort(streamId);
-    return { success: true, port };
-  });
-
-  // RTSP diagnostics handler
-  ipcMain.handle('rtsp-diagnostics', async () => {
-    try {
-      const diagnostics = await (rtspStreamServer as any).runDiagnostics();
-      return { success: true, diagnostics };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  });
-
-  // Auto-updater IPC handlers
-  ipcMain.handle('check-for-updates', async () => {
-    if (!app.isPackaged) {
-      return { success: false, error: 'Aktualizace jsou dostupné pouze v nainstalované aplikaci.' };
-    }
-    try {
-      console.log('IPC: check-for-updates called');
-      win?.webContents.send('checking-for-update')
-      const result = await autoUpdater.checkForUpdates();
-      console.log('IPC: checkForUpdates result:', result);
-      return { success: true, result };
-    } catch (error) {
-      console.error('IPC: Error checking for updates:', error);
-      win?.webContents.send('update-error', error instanceof Error ? error.message : 'Unknown error')
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  })
-
-  ipcMain.handle('restart-app', () => {
-    console.log('IPC: restart-app called');
-    try {
-      console.log('Attempting quitAndInstall...')
-      autoUpdater.quitAndInstall(true, true) // Force restart immediately
-      
-      // Fallback - force quit after timeout
-      setTimeout(() => {
-        console.log('quitAndInstall timeout - forcing app quit...')
-        app.relaunch()
-        app.quit()
-      }, 2000)
-      
-      return { success: true };
-    } catch (error) {
-      console.error('Error in restart-app:', error)
-      // Force quit as last resort
-      try {
-        app.relaunch()
-        app.quit()
-      } catch (finalError) {
-        console.error('Final error in restart:', finalError)
-        process.exit(0)
-      }
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  })
+  initAutoUpdater(() => win)
 })
-
-// Cleanup streams on quit
-app.on('before-quit', () => {
-  rtspStreamServer.stopAllStreams();
-});

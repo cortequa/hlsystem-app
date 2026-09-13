@@ -1,33 +1,89 @@
+# Release pokladní aplikace → GitHub Releases, odkud si ji pokladna sama stáhne
+# (electron/updater.ts). Spouští se pushnutím tagu verze, např. v3.2.0.
+#
+# Jediný workflow schválně: dřív tu byly tři (release.yml, build-and-release.yml,
+# auto-version.yml) a na stejný tag publikovaly souběžně — v3.1.3 tak skončil
+# bez `hlsystem-app-win.exe`, na který odkazuje latest.yml, a pokladna se
+# nemohla aktualizovat. Ze stejného důvodu běží Linux a Windows ZA SEBOU:
+# druhý job nahraje do draftu, který založil první.
+#
+# Produkční pokladna běží na Fedoře → AppImage + latest-linux.yml.
+#
+# Nastavení repozitáře (Settings → Secrets and variables → Actions):
+#   Variables:  VITE_API        https://<veřejná-ip-pi>/api
+#   Secrets:    VITE_API_TOKEN  = API_ACCESS_TOKEN z docker/.env na Pi
+#
+# Výsledek je DRAFT release — pokladnám se nabídne až po ručním „Publish
+# release" na GitHubu (viz electron-builder.json5).
 name: Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  release:
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
-
-    runs-on: ${{ matrix.os }}
-
+  linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Tag musí sedět s verzí v package.json
+        run: |
+          PKG="v$(node -p "require('./package.json').version")"
+          if [ "$PKG" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME ≠ package.json $PKG — updater by verzi nerozpoznal."
+            exit 1
+          fi
 
-      - name: Build and publish
+      # Build bez tokenu by na pokladně dostal od API 401 na všechno — raději
+      # nevydat nic než vydat nefunkční verzi, kterou si pokladna sama nainstaluje.
+      - name: Build-time konfigurace musí být vyplněná
+        env:
+          VITE_API: ${{ vars.VITE_API }}
+          VITE_API_TOKEN: ${{ secrets.VITE_API_TOKEN }}
+        run: |
+          [[ "$VITE_API" == https://*/api ]] || { echo "::error::Proměnná VITE_API chybí nebo není https://…/api"; exit 1; }
+          [ "${#VITE_API_TOKEN}" -ge 32 ] || { echo "::error::Secret VITE_API_TOKEN chybí nebo je kratší než 32 znaků"; exit 1; }
+
+      - run: npm ci
+
+      - name: Build + publish (draft)
+        run: npm run build:publish:linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          VITE_API: ${{ vars.VITE_API }}
+          VITE_API_TOKEN: ${{ secrets.VITE_API_TOKEN }}
+
+  windows:
+    needs: linux
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build + publish (draft)
         run: npm run build:publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_API: ${{ vars.VITE_API }}
+          VITE_API_TOKEN: ${{ secrets.VITE_API_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'

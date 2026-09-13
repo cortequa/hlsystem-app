@@ -3,8 +3,6 @@ import { closeGate, getGates, openGate } from "../services/gateService";
 import { RealtimeEvents } from "../services/realtimeService";
 import { useSocketConnected, useSocketEvent } from "../hooks/useRealtime";
 import { Gate, GatePhase } from "../types/gate";
-import RTSPStream from "./RTSPStream";
-import RTSPDiagnostics from "./RTSPDiagnostics";
 import GateActivity from "./GateActivity";
 
 interface LiveState {
@@ -17,7 +15,6 @@ export default function Gates() {
   const [live, setLive] = useState<Record<string, LiveState>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [activityGate, setActivityGate] = useState<Gate | null>(null);
   const connected = useSocketConnected();
 
@@ -79,17 +76,7 @@ export default function Gates() {
 
   return (
     <div className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <button
-          onClick={() => setShowDiagnostics(true)}
-          className="bg-link hover:opacity-90 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          Diagnostika kamery
-        </button>
-
+      <div className="mb-3 flex items-center justify-end">
         <span
           className={`flex items-center gap-1.5 text-xs font-medium ${
             connected ? "text-success" : "text-error"
@@ -141,20 +128,10 @@ export default function Gates() {
                 </button>
               </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div className="aspect-video w-full rounded-md overflow-hidden bg-black">
-                <RTSPStream rtspUrl={g.cameras.entry} streamId={`${g._id}-entry`} className="w-full h-full" />
-              </div>
-              <div className="aspect-video w-full rounded-md overflow-hidden bg-black">
-                <RTSPStream rtspUrl={g.cameras.exit} streamId={`${g._id}-exit`} className="w-full h-full" />
-              </div>
-            </div>
           </div>
         );
       })}
 
-      <RTSPDiagnostics isOpen={showDiagnostics} onClose={() => setShowDiagnostics(false)} />
       {activityGate && (
         <GateActivity gate={activityGate} onClose={() => setActivityGate(null)} />
       )}

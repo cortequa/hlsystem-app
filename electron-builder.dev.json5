@@ -1,6 +1,5 @@
 // Vývojová konfigurace electron-builder (bez auto-updater)
 {
-  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.hlsystem.app.dev",
   "asar": true,
   "productName": "HLSystem (DEV)",

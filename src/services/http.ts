@@ -2,7 +2,13 @@
  * Tenký HTTP helper. Core API balí úspěšné odpovědi do `{ success: true, data }`
  * (TransformInterceptor) — tady to rozbalíme na jednom místě, ať to služby
  * neřeší copy-pastem. Chyby se normalizují na Error se srozumitelnou zprávou.
+ *
+ * Přístupový token se přidává TADY, na jednom místě — kdyby si ho posílala
+ * každá služba sama, dřív nebo později by na něj někde zapomněla a volání by
+ * skončilo na 401 až v provozu.
  */
+
+import { ENV } from "../config/env";
 
 interface ApiEnvelope<T> {
   success?: boolean;
@@ -77,29 +83,41 @@ async function parse<T>(res: Response): Promise<T> {
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
+/** Hlavičky s přístupovým tokenem instalace (viz ApiTokenGuard v API). */
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    ...(ENV.API.TOKEN ? { Authorization: `Bearer ${ENV.API.TOKEN}` } : {}),
+    ...(extra ?? {}),
+  };
+}
+
 export const http = {
   /**
    * `signal` umožní zrušit dotaz, který mezitím zestaral (uživatel přepnul
    * stránku/filtr). Bez toho dojezdí odpověď na starý filtr a přepíše novější.
    */
   async get<T>(url: string, signal?: AbortSignal): Promise<T> {
-    return parse<T>(await fetch(url, { signal }));
+    return parse<T>(await fetch(url, { signal, headers: authHeaders() }));
   },
   async post<T>(url: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
     return parse<T>(
       await fetch(url, {
         method: "POST",
-        headers: { ...jsonHeaders, ...(headers ?? {}) },
+        headers: { ...jsonHeaders, ...authHeaders(headers) },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
     );
   },
   async patch<T>(url: string, body: unknown): Promise<T> {
     return parse<T>(
-      await fetch(url, { method: "PATCH", headers: jsonHeaders, body: JSON.stringify(body) }),
+      await fetch(url, {
+        method: "PATCH",
+        headers: { ...jsonHeaders, ...authHeaders() },
+        body: JSON.stringify(body),
+      }),
     );
   },
   async del<T>(url: string): Promise<T> {
-    return parse<T>(await fetch(url, { method: "DELETE" }));
+    return parse<T>(await fetch(url, { method: "DELETE", headers: authHeaders() }));
   },
 };

@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 
-declare const JSMpeg: any;
 
 interface ImportMetaEnv {
   readonly VITE_API: string;
   readonly VITE_WS?: string;
+  readonly VITE_API_TOKEN?: string;
 }
 
 interface ImportMeta {

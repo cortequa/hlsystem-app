@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import { getGateOperations } from "../services/gateService";
-import { accessEventService } from "../services/accessEventService";
 import { RealtimeEvents } from "../services/realtimeService";
 import { useSocketEvent } from "../hooks/useRealtime";
 import { Gate, GateOperation, OperationSource } from "../types/gate";
-import { AccessEvent } from "../types/accessEvent";
 
 interface Props {
   gate: Gate;
@@ -13,7 +11,6 @@ interface Props {
 
 const sourceLabel: Record<OperationSource, string> = {
   manual: "Obsluha",
-  lpr: "LPR",
   system: "Systém",
 };
 
@@ -25,8 +22,6 @@ const actionLabel: Record<GateOperation["action"], string> = {
 
 export default function GateActivity({ gate, onClose }: Props) {
   const [operations, setOperations] = useState<GateOperation[]>([]);
-  const [events, setEvents] = useState<AccessEvent[]>([]);
-  const [tab, setTab] = useState<"operations" | "events">("operations");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,14 +29,8 @@ export default function GateActivity({ gate, onClose }: Props) {
     (async () => {
       setLoading(true);
       try {
-        const [ops, evs] = await Promise.all([
-          getGateOperations(gate._id),
-          accessEventService.list(gate._id).catch(() => [] as AccessEvent[]),
-        ]);
-        if (alive) {
-          setOperations(ops);
-          setEvents(evs);
-        }
+        const ops = await getGateOperations(gate._id);
+        if (alive) setOperations(ops);
       } finally {
         if (alive) setLoading(false);
       }
@@ -85,38 +74,15 @@ export default function GateActivity({ gate, onClose }: Props) {
           </button>
         </div>
 
-        <div className="flex gap-2 px-4 pt-3">
-          <TabButton active={tab === "operations"} onClick={() => setTab("operations")}>
-            Ovládací operace
-          </TabButton>
-          <TabButton active={tab === "events"} onClick={() => setTab("events")}>
-            LPR události
-          </TabButton>
-        </div>
-
         <div className="flex-1 overflow-y-auto p-4">
-          {loading && <div className="text-sm text-text-secondary">Načítání…</div>}
-
-          {!loading && tab === "operations" && (
+          {loading ? (
+            <div className="text-sm text-text-secondary">Načítání…</div>
+          ) : (
             <OperationsList operations={operations} />
           )}
-          {!loading && tab === "events" && <EventsList events={events} />}
         </div>
       </div>
     </div>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-t-lg text-sm font-medium ${
-        active ? "bg-secondary text-text-primary" : "text-text-secondary hover:text-text-primary"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -144,46 +110,8 @@ function OperationsList({ operations }: { operations: GateOperation[] }) {
   );
 }
 
-function EventsList({ events }: { events: AccessEvent[] }) {
-  if (events.length === 0) {
-    return <div className="text-sm text-text-secondary">Zatím žádné LPR události.</div>;
-  }
-  return (
-    <ul className="space-y-2">
-      {events.map((ev) => (
-        <li key={ev._id} className="flex items-center gap-3 text-sm border-b border-secondary/50 pb-2">
-          <img
-            src={accessEventService.imageUrl(ev._id)}
-            alt={ev.plateText}
-            className="w-16 h-12 object-cover rounded bg-black"
-            loading="lazy"
-          />
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-semibold text-text-primary">{ev.plateText}</span>
-              <span
-                className={`px-1.5 py-0.5 rounded text-xs text-white ${
-                  ev.decision === "allow" ? "bg-success" : "bg-error"
-                }`}
-              >
-                {ev.decision === "allow" ? "povoleno" : "zamítnuto"}
-              </span>
-              <span className="text-xs text-text-secondary">{ev.direction === "entry" ? "vjezd" : "výjezd"}</span>
-            </div>
-            <div className="text-xs text-text-secondary">
-              {ev.reason} · {(ev.confidence * 100).toFixed(0)} %
-            </div>
-          </div>
-          <span className="text-xs text-text-secondary">{formatTime(ev.occurredAt)}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function SourceBadge({ source }: { source: OperationSource }) {
-  const cls =
-    source === "manual" ? "bg-link" : source === "lpr" ? "bg-text-secondary" : "bg-secondary";
+  const cls = source === "manual" ? "bg-link" : "bg-secondary";
   const text = source === "system" ? "text-text-primary" : "text-white";
   return <span className={`px-1.5 py-0.5 rounded text-xs ${cls} ${text}`}>{sourceLabel[source]}</span>;
 }

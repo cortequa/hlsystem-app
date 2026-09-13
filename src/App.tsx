@@ -1,6 +1,5 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
-import "./App.css";
 // Home je vstupní obrazovka (pokladna) — načítá se rovnou, ne přes lazy.
 import Home from "./pages/Home";
 
@@ -15,10 +14,8 @@ const Metrics = lazy(() => import("./pages/Metrics"));
 const TaxReduction = lazy(() => import("./pages/TaxReduction"));
 const Reservations = lazy(() => import("./pages/Reservations"));
 const LicensePlates = lazy(() => import("./pages/LicensePlates"));
-const Showers = lazy(() => import("./pages/Showers"));
 
 import Navigation from "./components/Navigation";
-import UpdateManager from "./components/UpdateManager";
 
 function RouteFallback() {
   return (
@@ -38,14 +35,12 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/reservations" element={<Reservations />} />
             <Route path="/plates" element={<LicensePlates />} />
-            <Route path="/showers" element={<Showers />} />
             {/* <Route path="/sales" element={<Sales />} /> deaktivováno, viz komentář nahoře */}
             <Route path="/metrics" element={<Metrics />} />
             <Route path="/tax-reduction" element={<TaxReduction />} />
           </Routes>
         </Suspense>
       </div>
-      <UpdateManager />
     </main>
   );
 }

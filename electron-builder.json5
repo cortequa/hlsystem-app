@@ -1,16 +1,21 @@
-// @see - https://www.electron.build/configuration/configuration
+// Konfigurace electron-builderu — viz https://www.electron.build/configuration/configuration
 {
-  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.hlsystem.app",
   "asar": true,
   "productName": "HLSystem",
   "directories": {
     "output": "release/${version}"
   },
+  // Auto-update z GitHub Releases (viz electron/updater.ts). Pokladna si novou
+  // verzi stáhne sama podle `latest.yml` — ten odkazuje na `hlsystem-app-win.exe`
+  // (artifactName níž), jméno se proto nesmí měnit.
+  // `draft`: CI release jen připraví; ke klientům se dostane až po ručním
+  // „Publish release" na GitHubu — o načasování (např. přechod API) rozhoduje člověk.
   "publish": {
     "provider": "github",
     "owner": "cortequa",
-    "repo": "hlsystem-app"
+    "repo": "hlsystem-app",
+    "releaseType": "draft"
   },
   "forceCodeSigning": false,
   "files": [
@@ -45,6 +50,8 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true
   },
+  // Produkční pokladna (Fedora): updater čte `latest-linux.yml`, který odkazuje
+  // na `hlsystem-app-linux.AppImage` — jméno se nesmí měnit.
   "linux": {
     "target": [
       "AppImage"

@@ -20,10 +20,23 @@ function originOf(url: string): string {
 }
 const WS = import.meta.env.VITE_WS ?? originOf(API);
 
+// Sdílený přístupový token instalace. API i WebSocket bez něj odpoví 401 —
+// systém běží na veřejné IP a tohle je to, co ho zavírá pro kohokoli jiného
+// než tuhle aplikaci. Zapéká se do buildu (VITE_API_TOKEN); musí se shodovat
+// s API_ACCESS_TOKEN na straně serveru.
+const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? '';
+
+if (!API_TOKEN) {
+  console.warn(
+    '[BEZPEČNOST] VITE_API_TOKEN není nastavený — build se k zabezpečenému API nepřipojí.',
+  );
+}
+
 export const ENV = {
   API: {
     API: API,
     WS: WS,
+    TOKEN: API_TOKEN,
     ENDPOINTS: {
       PRODUCTS: `${API}/products`,
       VISITORS: `${API}/visitors`,
@@ -31,15 +44,8 @@ export const ENV = {
       ORDERS: `${API}/orders`,
       // Pobyty = rezervace s vozidly (dřív se rezervace tvářily jako účtenky).
       STAYS: `${API}/stays`,
-      // Sprint 4: reálné endpointy core API (starý neexistující `/entries` odstraněn).
+      // Evidence SPZ (ruční povolení / blacklist).
       LICENSE_PLATES: `${API}/license-plates`,
-      ACCESS_EVENTS: `${API}/access-events`,
-      // Auta čekající u brány — fronta pro recepci.
-      PENDING_ARRIVALS: `${API}/pending-arrivals`,
-      PRESENCE: `${API}/presence`,
-      // Čipový systém sprch.
-      SHOWER_CHIPS: `${API}/shower-chips`,
-      SHOWER_DEVICES: `${API}/shower-devices`,
     },
   },
 };

@@ -42,14 +42,12 @@ export default function StayOrderModal({ stay, guestName, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sprchové kredity tu záměrně nejsou — bez UID čipu by se cena naúčtovala,
-  // ale host by žádný kredit nedostal. Jejich cesta vede přes pokladnu.
   useEffect(() => {
     let active = true;
     productService
       .getProducts()
       .then((list) => {
-        if (active) setProducts(list.filter((p) => p.kind !== "shower_credit"));
+        if (active) setProducts(list);
       })
       .catch((err: unknown) => {
         console.error("Failed to load products:", err);

@@ -2,9 +2,9 @@ import { io, Socket } from "socket.io-client";
 import { ENV } from "../config/env";
 
 /**
- * Sdílené Socket.IO připojení k core API (Sprint 4). Core už vysílá události
- * `gateOpening/gateClosing/gateOpened/gateClosed`, `gateOperation`, `accessEvent`
- * a `licensePlateUploaded` — app na ně poslouchá místo slepého lokálního stavu.
+ * Sdílené Socket.IO připojení k core API. Core vysílá události
+ * `gateOpening/gateClosing/gateOpened/gateClosed` a `gateOperation` —
+ * app na ně poslouchá místo slepého lokálního stavu.
  */
 
 export const RealtimeEvents = {
@@ -13,13 +13,6 @@ export const RealtimeEvents = {
   gateOpened: "gateOpened",
   gateClosed: "gateClosed",
   gateOperation: "gateOperation",
-  accessEvent: "accessEvent",
-  /** Auto čeká u brány — kvůli téhle události o něm recepce vůbec ví. */
-  pendingArrival: "pendingArrival",
-  pendingArrivalResolved: "pendingArrivalResolved",
-  /** Přiložení čipu u sprch — recepce živě vidí i to, že hostovi došel kredit. */
-  showerEvent: "showerEvent",
-  licensePlateUploaded: "licensePlateUploaded",
 } as const;
 
 let socket: Socket | null = null;
@@ -28,6 +21,9 @@ let socket: Socket | null = null;
 export function getSocket(): Socket {
   if (!socket) {
     socket = io(ENV.API.WS, {
+      // Token instalace — bez něj server spojení rovnou zavře (viz
+      // RealtimeGateway.handleConnection).
+      auth: ENV.API.TOKEN ? { token: ENV.API.TOKEN } : undefined,
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,

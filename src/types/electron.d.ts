@@ -24,20 +24,6 @@ declare global {
     electronAPI?: {
       printReceipt: (data: PrintReceiptData) => Promise<{ success: boolean; error?: string }>;
       getPrinters: () => Promise<unknown[]>;
-      startRTSPStream: (rtspUrl: string, streamId: string) => Promise<{ success: boolean; port?: number; error?: string }>;
-      stopRTSPStream: (streamId: string) => Promise<{ success: boolean; error?: string }>;
-      getStreamPort: (streamId: string) => Promise<{ success: boolean; port?: number | null }>;
-      // RTSP diagnostics
-      rtspDiagnostics: () => Promise<{ success: boolean; diagnostics?: any; error?: string }>;
-      // Auto-updater APIs
-      checkForUpdates: () => Promise<void>;
-      restartApp: () => Promise<void>;
-      onCheckingForUpdate: (callback: () => void) => void;
-      onUpdateAvailable: (callback: (info: unknown) => void) => void;
-      onUpdateNotAvailable: (callback: (info: unknown) => void) => void;
-      onUpdateDownloaded: (callback: (info: unknown) => void) => void;
-      onDownloadProgress: (callback: (progress: unknown) => void) => void;
-      onUpdateError: (callback: (error: string) => void) => void;
       removeAllListeners: (channel: string) => void;
     }
   }

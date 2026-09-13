@@ -3,7 +3,7 @@ export interface StayVehicle {
   plate: string;
   plateNormalized: string;
   plateCanonical: string;
-  source: "manual" | "lpr" | "import";
+  source: "manual" | "import";
   addedAt: string;
   note?: string;
 }

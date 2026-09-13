@@ -35,10 +35,27 @@ export interface OrdersPageParams {
 }
 
 export interface TaxReductionResult {
-  success: boolean;
+  status: 'completed';
+  productId: string;
+  requestedQuantity: number;
   removedQuantity: number;
-  ordersAffected: number;
-  error?: string;
+  periodFrom: string;
+  periodTo: string;
+  affectedOrders: { orderId: string; removedQuantity: number }[];
+  auditId: string;
+}
+
+export interface TaxReductionHistoryEntry {
+  _id: string;
+  productId: string;
+  requestedQuantity: number;
+  removedQuantity: number;
+  periodFrom: string;
+  periodTo: string;
+  createdAt: string;
+  createdBy: string;
+  reason: string;
+  affectedOrders: { orderId: string; items: { productId: string; quantity: number }[] }[];
 }
 
 export interface ProductStat {
@@ -59,9 +76,6 @@ export interface OrderStats {
   totalRevenue: number;
   orderCount: number;
 }
-
-/** Kolik zápisů posílat najednou — API má limit 120 požadavků/min na IP. */
-const WRITE_CONCURRENCY = 5;
 
 /**
  * Převede den z `<input type="date">` na přesný okamžik v místním čase.
@@ -104,26 +118,6 @@ export const orderService = {
         );
         const paged = toPaged(data);
         return { ...paged, items: paged.items.map(normalizeOrder) };
-    },
-
-    /**
-     * Kompletní seznam objednávek (nestránkovaný, se serverovým stropem).
-     * Používá ho jen krácení daní, které potřebuje projít celou historii.
-     * Pro zobrazování seznamů použij `getOrdersPage`.
-     */
-    async getAllOrders(): Promise<Order[]> {
-        const data = await http.get<Order[] | Paged<Order>>(ORDERS);
-        return toPaged(data).items.map(normalizeOrder);
-    },
-
-    /**
-     * Objednávky v zadaném datovém rozsahu (nestránkované, server filtruje).
-     * `from`/`to` jsou ISO stringy — server je přijímá na `GET /orders`.
-     */
-    async getOrdersByDateRange(from: string, to: string): Promise<Order[]> {
-        const query = buildQuery({ from, to });
-        const data = await http.get<Order[] | Paged<Order>>(`${ORDERS}${query}`);
-        return toPaged(data).items.map(normalizeOrder);
     },
 
     /**
@@ -201,106 +195,22 @@ export const orderService = {
     async reduceTaxForProduct(
       productId: string,
       targetQuantity: number,
-      dateRange?: { from: string; to: string },
+      dateRange: { from: string; to: string },
+      reason = 'Redukce nákladů',
     ): Promise<TaxReductionResult> {
-    try {
-      // Filtrování podle data probíhá na serveru — stahujeme jen relevantní objednávky
-      const orders = dateRange
-        ? await this.getOrdersByDateRange(dateRange.from, dateRange.to)
-        : await this.getAllOrders();
-
-      const ordersWithProduct = orders.filter(order =>
-        order.items.some(item => item.productId === productId)
-      );
-
-      if (ordersWithProduct.length === 0) {
-        return {
-          success: false,
-          removedQuantity: 0,
-          ordersAffected: 0,
-          error: 'Žádné objednávky s tímto produktem nebyly nalezeny v zadaném období'
-        };
-      }
-
-      // Zamícháme objednávky pro náhodný výběr
-      const shuffledOrders = [...ordersWithProduct].sort(() => Math.random() - 0.5);
-
-      let remainingQuantity = targetQuantity;
-      let totalRemovedQuantity = 0;
-      const pending: { order: Order; items: OrderItem[] }[] = [];
-
-      // Nejdřív jen spočítáme, co se má změnit — zápisy jdou až potom v dávkách.
-      for (const order of shuffledOrders) {
-        if (remainingQuantity <= 0) break;
-
-        let orderModified = false;
-        const updatedItems = order.items
-          .map(item => {
-            if (item.productId !== productId || remainingQuantity <= 0) return item;
-
-            const quantityToRemove = Math.min(item.quantity, remainingQuantity);
-            if (quantityToRemove <= 0) return item;
-
-            remainingQuantity -= quantityToRemove;
-            totalRemovedQuantity += quantityToRemove;
-            orderModified = true;
-
-            const newQuantity = item.quantity - quantityToRemove;
-            return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
-          })
-          .filter((item): item is OrderItem => item !== null);
-
-        if (orderModified) {
-          pending.push({ order, items: updatedItems });
-        }
-      }
-
-      // Sériový cyklus PATCH/DELETE narážel při větším počtu na rate limit
-      // (120 req/min na IP) — posíláme je po malých dávkách.
-      let ordersAffected = 0;
-      for (let i = 0; i < pending.length; i += WRITE_CONCURRENCY) {
-        const chunk = pending.slice(i, i + WRITE_CONCURRENCY);
-        const results = await Promise.allSettled(
-          chunk.map(({ order, items }) =>
-            items.length === 0
-              ? this.deleteOrder(order._id)
-              : this.updateOrder(order._id, {
-                  products: items.map(item => ({
-                    productId: item.productId,
-                    quantity: item.quantity,
-                    duration: item.duration,
-                  })),
-                  date: order.date ?? order.createdAt,
-                }),
-          ),
-        );
-        results.forEach((result, index) => {
-          if (result.status === 'fulfilled') {
-            ordersAffected++;
-          } else {
-            console.error(
-              `Chyba při aktualizaci objednávky ${chunk[index]?.order._id}:`,
-              result.reason,
-            );
-          }
-        });
-      }
-
-      return {
-        success: true,
-        removedQuantity: totalRemovedQuantity,
-        ordersAffected
-      };
-    } catch (error) {
-      console.error('Error reducing tax for product:', error);
-      return {
-        success: false,
-        removedQuantity: 0,
-        ordersAffected: 0,
-        error: error instanceof Error ? error.message : 'Neznámá chyba při krácení daní'
-      };
-    }
+      return http.post<TaxReductionResult>(`${ORDERS}/reductions`, {
+        productId,
+        quantity: targetQuantity,
+        from: dateRange.from,
+        to: dateRange.to,
+        reason,
+        idempotencyKey: crypto.randomUUID(),
+      });
   },
+
+    async getReductionHistory(): Promise<TaxReductionHistoryEntry[]> {
+      return http.get<TaxReductionHistoryEntry[]>(`${ORDERS}/reductions`);
+    },
 };
 
 function toDayString(date: Date): string {

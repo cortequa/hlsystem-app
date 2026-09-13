@@ -1,22 +1,6 @@
 import { NavLink } from "react-router-dom";
-import { useState } from "react";
 
 export default function Navigation() {
-    const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-
-    const handleCheckForUpdates = async () => {
-        if (window.electronAPI && !isCheckingUpdates) {
-            setIsCheckingUpdates(true);
-            try {
-                await window.electronAPI.checkForUpdates();
-                // Reset stavu po 3 sekundách
-                setTimeout(() => setIsCheckingUpdates(false), 3000);
-            } catch (error) {
-                console.error('Error checking for updates:', error);
-                setIsCheckingUpdates(false);
-            }
-        }
-    };
     const navItems = [
         {
             path: "/",
@@ -41,15 +25,6 @@ export default function Navigation() {
                 // Štítek/SPZ — správa registračních značek
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M17.707 9.293l-5-5A1 1 0 0012 4H4a1 1 0 00-1 1v8a1 1 0 00.293.707l5 5a1 1 0 001.414 0l7-7a1 1 0 000-1.414zM6 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                </svg>
-            ),
-        },
-        {
-            path: "/showers",
-            icon: (
-                // Kapka — čipový systém sprch
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 2a.75.75 0 01.624.334C11.63 3.83 15 9.036 15 12a5 5 0 01-10 0c0-2.964 3.37-8.17 4.376-9.666A.75.75 0 0110 2zm0 3.09C8.87 6.93 6.5 10.9 6.5 12a3.5 3.5 0 107 0c0-1.1-2.37-5.07-3.5-6.91z" clipRule="evenodd" />
                 </svg>
             ),
         },
@@ -112,31 +87,6 @@ export default function Navigation() {
                 ))}
             </div>
 
-            {/* Utility tlačítka - na spodku navigace */}
-            <div className="mt-auto mb-4 flex flex-col items-center space-y-4">
-                {/* Tlačítko pro kontrolu aktualizací */}
-                {window.electronAPI && (
-                    <button
-                        onClick={handleCheckForUpdates}
-                        disabled={isCheckingUpdates}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors duration-200 ${
-                            isCheckingUpdates 
-                                ? "bg-gray-400 cursor-not-allowed" 
-                                : "bg-text-secondary hover:bg-text-primary hover:scale-110"
-                        }`}
-                        title={isCheckingUpdates ? "Kontroluji aktualizace..." : "Zkontrolovat aktualizace"}
-                    >
-                        <svg 
-                            xmlns="http://www.w3.org/2000/svg" 
-                            className={`h-5 w-5 text-primary ${isCheckingUpdates ? 'animate-spin' : ''}`} 
-                            viewBox="0 0 20 20" 
-                            fill="currentColor"
-                        >
-                            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                        </svg>
-                    </button>
-                )}
-            </div>
         </nav>
     );
 }

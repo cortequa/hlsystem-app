@@ -2,24 +2,13 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Product as ProductType } from "../types/product";
 import { OrderProduct } from "../types/order";
 import { orderService, CreateOrderDto } from "../services/orderService";
-import { pendingArrivalService } from "../services/pendingArrivalService";
 import { printerService } from "../services/printerService";
-import { showerService } from "../services/showerService";
 import { stayService } from "../services/stayService";
 import { splitName } from "../types/visitor";
-
-/** Prodej vázaný na auto u brány — SPZ i karta, kterou má prodej vyřídit. */
-export interface TicketContext {
-    plate: string;
-    pendingArrivalId?: string;
-}
 
 interface OverviewProps {
     selectedProducts?: ProductType[];
     onClearOrder?: () => void;
-    /** Předvyplněná SPZ z čekajícího vozu. */
-    ticketContext?: TicketContext | null;
-    onTicketResolved?: () => void;
 }
 
 /** Výchozí délka pobytu prodaného u brány, dokud obsluha neurčí jinak. */
@@ -34,22 +23,13 @@ const todayStart = (): Date => {
 export default function Overview({
     selectedProducts = [],
     onClearOrder,
-    ticketContext = null,
-    onTicketResolved,
 }: OverviewProps) {
-    // Prodej s SPZ zakládá pobyt, ne holou účtenku — jinak by lístek
-    // nevytvořil žádné oprávnění k vjezdu a brána by auto nepustila.
+    // Prodej s SPZ zakládá pobyt, ne holou účtenku — jinak by rezervace
+    // nevznikla a lístek by se neměl k čemu navázat.
     const [plate, setPlate] = useState("");
     const [guestName, setGuestName] = useState("");
     const [nights, setNights] = useState(DEFAULT_NIGHTS);
-    // Čip se objeví v košíku, jen když je v objednávce položka se sprchami.
-    const [chipUid, setChipUid] = useState("");
     const [saleError, setSaleError] = useState<string | null>(null);
-
-    // Kliknutí na „Prodat lístek" u čekajícího vozu předvyplní SPZ.
-    useEffect(() => {
-        if (ticketContext?.plate) setPlate(ticketContext.plate);
-    }, [ticketContext]);
 
     const [orderProducts, setOrderProducts] = useState<OrderProduct[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -126,16 +106,6 @@ export default function Overview({
         }
     };
 
-    // Kolik vstupů do sprch je v košíku. Počítá se stejně jako na serveru,
-    // ale slouží jen k tomu, aby se ukázalo pole čipu — autorita je API.
-    const showerCredits = orderProducts.reduce(
-        (sum, item) =>
-            item.product.kind === 'shower_credit'
-                ? sum + (item.product.showerCredits ?? 0) * item.quantity
-                : sum,
-        0,
-    );
-
     // Calculate total price
     const totalPrice = orderProducts.reduce(
         (sum, item) => sum + (item.product.price * item.quantity), 0
@@ -158,7 +128,6 @@ export default function Overview({
         setPlate('');
         setGuestName('');
         setNights(DEFAULT_NIGHTS);
-        setChipUid('');
         setSaleError(null);
         onClearOrder?.();
     };
@@ -254,10 +223,9 @@ export default function Overview({
      * Dokončení prodeje.
      *
      * Bez SPZ je to běžný prodej v bufetu → holá účtenka. S SPZ jde o lístek
-     * ke vjezdu, a ten musí založit POBYT — účtenka sama žádné oprávnění
-     * k vjezdu nevytváří a brána by auto nepustila. `POST /stays` založí
-     * obojí najednou, takže obsluze nemůže zůstat zaplacený lístek bez
-     * pobytu (ani naopak).
+     * pro hosta, a ten musí založit POBYT — účtenka sama rezervaci nevytváří.
+     * `POST /stays` založí obojí najednou, takže obsluze nemůže zůstat
+     * zaplacený lístek bez pobytu (ani naopak).
      */
     const handleCompleteSale = async () => {
         if (orderProducts.length === 0 || isProcessing) return;
@@ -272,21 +240,9 @@ export default function Overview({
             setSaleError(null);
 
             const trimmedPlate = plate.trim().toUpperCase();
-            const trimmedChip = chipUid.trim().toUpperCase();
             let receiptNumber: string;
 
-            if (trimmedChip && trimmedPlate) {
-                // Dobití čipu i pobyt zakládají každý vlastní účtenku a Mongo
-                // běží bez transakcí — sloučit je do jednoho prodeje by mohlo
-                // skončit napůl. Obsluha to udělá jako dva prodeje.
-                setSaleError('Kredit na čip a pobyt nelze prodat najednou — namarkuj je zvlášť.');
-                return;
-            }
-
-            if (trimmedChip) {
-                const result = await showerService.topUp(trimmedChip, products);
-                receiptNumber = result.orderId;
-            } else if (trimmedPlate) {
+            if (trimmedPlate) {
                 const visitor = splitName(guestName) ?? { lastName: 'Host' };
                 const from = todayStart();
                 const to = new Date(from);
@@ -300,20 +256,6 @@ export default function Overview({
                     products,
                 });
                 receiptNumber = result.orderId ?? result.stayId;
-
-                // Karta u brány se zavře až po úspěšném založení pobytu.
-                // Podle politiky brány se přitom závora otevře (`auto_open`),
-                // nebo počká na ruční potvrzení obsluhy (`confirm`).
-                if (ticketContext?.pendingArrivalId) {
-                    await pendingArrivalService
-                        .link(ticketContext.pendingArrivalId, result.stayId)
-                        .catch((err: unknown) => {
-                            // Pobyt existuje a je zaplacený — SPZ je v něm.
-                            // Neúspěšné zavření karty prodej neruší.
-                            console.warn('Karta u brány se nezavřela:', err);
-                        });
-                    onTicketResolved?.();
-                }
             } else {
                 const orderData: CreateOrderDto = {
                     products,
@@ -438,32 +380,7 @@ export default function Overview({
                     </div>
 
                     <div className="mt-4 border-t border-text-secondary/10 pt-4">
-                        {/* Sprchy: kredit se připisuje na konkrétní čip, takže
-                            bez UID nemá prodej kam jít. USB čtečka na pokladně
-                            emuluje klávesnici — stačí kliknout a přiložit. */}
-                        {showerCredits > 0 && (
-                            <div className="mb-3">
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        value={chipUid}
-                                        onChange={(e) => setChipUid(e.target.value)}
-                                        placeholder="Čip — přilož ke čtečce"
-                                        autoFocus
-                                        className="flex-1 px-2 py-1.5 rounded-md bg-secondary/40 text-text-primary font-mono uppercase text-sm placeholder-text-secondary"
-                                    />
-                                    <span className="text-xs text-text-secondary whitespace-nowrap">
-                                        +{showerCredits} vstupů
-                                    </span>
-                                </div>
-                                {!chipUid.trim() && (
-                                    <p className="text-xs text-error mt-1">
-                                        Bez čipu se kredit nemá kam připsat.
-                                    </p>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Vyplněná SPZ dělá z prodeje lístek ke vjezdu: založí
+                        {/* Vyplněná SPZ dělá z prodeje lístek pro hosta: založí
                             pobyt, ne holou účtenku. Prázdná = běžný prodej. */}
                         <div className="grid grid-cols-[1fr_1fr_auto] gap-2 mb-3">
                             <input
@@ -504,15 +421,9 @@ export default function Overview({
 
                         <button
                             onClick={handleCompleteSale}
-                            disabled={
-                                orderProducts.length === 0 ||
-                                isProcessing ||
-                                (showerCredits > 0 && !chipUid.trim())
-                            }
+                            disabled={orderProducts.length === 0 || isProcessing}
                             className={`w-full py-3 text-primary rounded-md transition-colors ${
-                                orderProducts.length === 0 ||
-                                isProcessing ||
-                                (showerCredits > 0 && !chipUid.trim())
+                                orderProducts.length === 0 || isProcessing
                                     ? 'bg-success/40 cursor-not-allowed'
                                     : 'bg-success hover:bg-success/80'
                                 }`}
@@ -523,11 +434,7 @@ export default function Overview({
                                     Zpracování...
                                 </div>
                             ) : (
-                                chipUid.trim()
-                                    ? 'Dobít čip'
-                                    : plate.trim()
-                                      ? 'Prodat a pustit'
-                                      : 'Dokončit prodej'
+                                plate.trim() ? 'Prodat lístek' : 'Dokončit prodej'
                             )}
                         </button>
                     </div>

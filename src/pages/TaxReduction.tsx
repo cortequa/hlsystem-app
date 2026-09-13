@@ -14,6 +14,7 @@ export default function TaxReduction() {
   const [quantity, setQuantity] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [operationMessage, setOperationMessage] = useState<string | null>(null);
   const [dateMode, setDateMode] = useState<'day' | 'month'>('day');
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const now = new Date();
@@ -24,15 +25,21 @@ export default function TaxReduction() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
   const [reductionHistory, setReductionHistory] = useState<Array<{
-    date: string;
-    productName: string;
-    quantity: number;
-    ordersAffected: number;
+    _id: string;
+    createdAt: string;
+    productId: string;
+    requestedQuantity: number;
+    removedQuantity: number;
+    periodFrom: string;
+    periodTo: string;
+    reason: string;
+    createdBy: string;
+    affectedOrders: unknown[];
   }>>([]);
 
   useEffect(() => {
     fetchProducts();
-    loadReductionHistory();
+    void loadReductionHistory();
   }, []);
 
   const fetchProducts = async () => {
@@ -47,17 +54,12 @@ export default function TaxReduction() {
     }
   };
 
-  const loadReductionHistory = () => {
-    const saved = localStorage.getItem('taxReductionHistory');
-    if (saved) {
-      setReductionHistory(JSON.parse(saved));
+  const loadReductionHistory = async () => {
+    try {
+      setReductionHistory(await orderService.getReductionHistory());
+    } catch (error) {
+      console.error('Nelze načíst serverovou historii redukcí:', error);
     }
-  };
-
-  const saveReductionHistory = (newEntry: typeof reductionHistory[0]) => {
-    const updated = [newEntry, ...reductionHistory].slice(0, 50); // Keep last 50 entries
-    setReductionHistory(updated);
-    localStorage.setItem('taxReductionHistory', JSON.stringify(updated));
   };
 
   const handleTaxReduction = async () => {
@@ -72,6 +74,7 @@ export default function TaxReduction() {
 
     try {
       setIsProcessing(true);
+      setOperationMessage(null);
 
       // Vypočítáme datový rozsah podle zvoleného režimu
       let dateRange: { from: string; to: string };
@@ -91,29 +94,19 @@ export default function TaxReduction() {
 
       const result = await orderService.reduceTaxForProduct(selectedProduct, quantity, dateRange);
       
-      if (result.success) {
-        // Save to history
-        saveReductionHistory({
-          date: new Date().toLocaleString('cs-CZ'),
-          productName: selectedProductData.name,
-          quantity: result.removedQuantity,
-          ordersAffected: result.ordersAffected || 0
-        });
-
-        const message = result.removedQuantity < quantity 
-          ? `Náklady úspěšně optimalizovány! Odstraněno ${result.removedQuantity} z požadovaných ${quantity} kusů položky "${selectedProductData.name}" z ${result.ordersAffected} transakcí.\n\nÚspora: ${formatCurrency(selectedProductData.price * result.removedQuantity)}`
-          : `Náklady úspěšně optimalizovány! Odstraněno ${result.removedQuantity} kusů položky "${selectedProductData.name}" z ${result.ordersAffected} transakcí.\n\nÚspora: ${formatCurrency(selectedProductData.price * result.removedQuantity)}`;
-
-        console.log(message);
+      if (result.removedQuantity === result.requestedQuantity) {
+        setOperationMessage(`Odebráno přesně ${result.removedQuantity} ks produktu "${selectedProductData.name}". Ovlivněno účtenek: ${result.affectedOrders.length}.`);
+        void loadReductionHistory();
         
         // Reset form
         setSelectedProduct('');
         setQuantity(0);
       } else {
-        console.error('Chyba při optimalizaci nákladů:', result.error);
+        throw new Error('Backend vrátil nekonzistentní výsledek redukce.');
       }
     } catch (error) {
       console.error('Error during cost reduction:', error);
+      setOperationMessage(`Operace nebyla provedena. ${error instanceof Error ? error.message : 'Neznámá chyba.'}`);
     } finally {
       setIsProcessing(false);
     }
@@ -270,6 +263,11 @@ export default function TaxReduction() {
                     'Provést redukci nákladů'
                   )}
                 </button>
+                {operationMessage && (
+                  <div className="mt-3 whitespace-pre-line rounded-md bg-secondary/50 p-3 text-sm text-text-primary">
+                    {operationMessage}
+                  </div>
+                )}
               </div>
 
               {/* Warning */}
@@ -306,12 +304,14 @@ export default function TaxReduction() {
                   {reductionHistory.map((entry, index) => (
                     <div key={index} className="bg-secondary/30 p-3 rounded-md border-l-4 border-success">
                       <div className="flex justify-between items-start mb-1">
-                        <h4 className="font-medium text-text-primary">{entry.productName}</h4>
-                        <span className="text-xs text-text-secondary">{entry.date}</span>
+                        <h4 className="font-medium text-text-primary">{products.find(p => p._id === entry.productId)?.name ?? entry.productId}</h4>
+                        <span className="text-xs text-text-secondary">{new Date(entry.createdAt).toLocaleString('cs-CZ')}</span>
                       </div>
                       <div className="text-sm text-text-secondary">
-                        <div>Optimalizováno: {entry.quantity} ks</div>
-                        <div>Ovlivněno transakcí: {entry.ordersAffected}</div>
+                        <div>Odebráno: {entry.removedQuantity} / požadováno {entry.requestedQuantity} ks</div>
+                        <div>Ovlivněno účtenek: {entry.affectedOrders.length}</div>
+                        <div>Období: {new Date(entry.periodFrom).toLocaleString('cs-CZ')} – {new Date(entry.periodTo).toLocaleString('cs-CZ')}</div>
+                        <div>Provedl: {entry.createdBy}</div>
                         <div className="text-success font-medium">✓ Náklady redukovány</div>
                       </div>
                     </div>
