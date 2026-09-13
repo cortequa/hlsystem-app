@@ -16,6 +16,7 @@ const Reservations = lazy(() => import("./pages/Reservations"));
 const LicensePlates = lazy(() => import("./pages/LicensePlates"));
 
 import Navigation from "./components/Navigation";
+import UpdateStatus from "./components/UpdateStatus";
 
 function RouteFallback() {
   return (
@@ -41,6 +42,7 @@ function App() {
           </Routes>
         </Suspense>
       </div>
+      <UpdateStatus />
     </main>
   );
 }

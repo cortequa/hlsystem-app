@@ -14,6 +14,15 @@ export interface PrintReceiptData {
   storeAddress?: string;
 }
 
+/** Stav auto-updateru z main procesu — zrcadlí `UpdateState` v electron/updater.ts. */
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'unsupported';
+  currentVersion: string;
+  version?: string;
+  percent?: number;
+  error?: string;
+}
+
 declare global {
   interface Window {
     ipcRenderer?: {
@@ -25,6 +34,12 @@ declare global {
       printReceipt: (data: PrintReceiptData) => Promise<{ success: boolean; error?: string }>;
       getPrinters: () => Promise<unknown[]>;
       removeAllListeners: (channel: string) => void;
+      updater?: {
+        getState: () => Promise<UpdateState>;
+        check: () => Promise<void>;
+        install: () => Promise<void>;
+        onState: (callback: (state: UpdateState) => void) => () => void;
+      };
     }
   }
 }
